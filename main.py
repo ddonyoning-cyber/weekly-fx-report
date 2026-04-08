@@ -923,7 +923,9 @@ st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매
 
 rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
 h = holdings_df.copy()
-h["금일 매매기준율"] = h["통화"].map(rate_map)
+h["보유금액"] = pd.to_numeric(h["보유금액"], errors="coerce").fillna(0)
+h["보유환율"] = pd.to_numeric(h["보유환율"], errors="coerce").fillna(0)
+h["금일 매매기준율"] = h["통화"].map(rate_map).astype(float)
 h["외환차손익(원)"] = (h["금일 매매기준율"] - h["보유환율"]) * h["보유금액"]
 
 # 표시용 포맷

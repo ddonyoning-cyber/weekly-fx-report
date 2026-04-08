@@ -984,20 +984,45 @@ usd_lo, usd_hi = band["USD/KRW"]
 cny_lo, cny_hi = band["CNY/KRW"]
 cross_lo, cross_hi = band["USD/CNY"]
 
-# ── 방향성: 밴드 중간값 vs 전주 평균 (숫자 기반 확정) ──
+# ── 방향성 판단 (1순위: 수치 기반 → 2순위: PDF 정성 보정) ──
 avg_lw = stats["avg_lw"]
 
-def _decide_dir(band_mid, prev_avg, threshold=0.003):
+# 1순위: 통화별 임계치 적용
+def _decide_dir_step1(band_mid, prev_avg, threshold):
+    """수치 기반 1차 판단."""
     pct = (band_mid - prev_avg) / prev_avg if prev_avg else 0
     if pct > threshold:
-        return "상승"
+        return "상승", pct
     elif pct < -threshold:
-        return "하락"
-    return "보합"
+        return "하락", pct
+    return "보합", pct
 
-usd_dir = _decide_dir((usd_lo + usd_hi) / 2, avg_lw["USD_KRW"])
-cny_dir = _decide_dir((cny_lo + cny_hi) / 2, avg_lw["CNY_KRW"])
-cross_dir = _decide_dir((cross_lo + cross_hi) / 2, avg_lw["USD_CNY"])
+# 2순위: PDF 정성 보정 (보합일 때만 적용)
+def _pdf_override(cur_key):
+    """PDF에서 강한 방향성 제시 시 보합을 오버라이드."""
+    info = ca.get(cur_key, {})
+    return info.get("direction", "보합")
+
+# USD/KRW: 임계치 ±0.5%
+usd_dir, usd_pct = _decide_dir_step1((usd_lo + usd_hi) / 2, avg_lw["USD_KRW"], 0.005)
+if usd_dir == "보합":
+    pdf_view = _pdf_override("USD_KRW")
+    if pdf_view != "보합":
+        usd_dir = pdf_view  # PDF가 상승/하락 명시 시 보정
+
+# CNY/KRW: 임계치 ±0.4%
+cny_dir, cny_pct = _decide_dir_step1((cny_lo + cny_hi) / 2, avg_lw["CNY_KRW"], 0.004)
+if cny_dir == "보합":
+    pdf_view = _pdf_override("CNY_KRW")
+    if pdf_view != "보합":
+        cny_dir = pdf_view
+
+# USD/CNY: 임계치 ±0.2%
+cross_dir, cross_pct = _decide_dir_step1((cross_lo + cross_hi) / 2, avg_lw["USD_CNY"], 0.002)
+if cross_dir == "보합":
+    pdf_view = _pdf_override("USD_CNY")
+    if pdf_view != "보합":
+        cross_dir = pdf_view
 
 # USD/CNY 서브라벨
 cross_sub = "위안화 절하" if cross_dir == "상승" else ("위안화 절상" if cross_dir == "하락" else "")

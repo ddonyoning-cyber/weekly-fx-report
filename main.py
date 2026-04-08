@@ -909,9 +909,9 @@ with st.sidebar:
         holdings_df = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
     else:
         holdings_df = pd.DataFrame({
-            "통화": ["USD", "CNY"],
-            "보유금액": [5000000.0, 30000000.0],
-            "보유환율": [1450.00, 198.50],
+            "통화": pd.array(["USD", "CNY"], dtype="object"),
+            "보유금액": pd.array([5000000.0, 30000000.0], dtype="float64"),
+            "보유환율": pd.array([1450.00, 198.50], dtype="float64"),
         })
     st.caption("컬럼: 통화, 보유금액, 보유환율")
 
@@ -923,10 +923,14 @@ st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매
 
 rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
 h = holdings_df.copy()
-h["보유금액"] = h["보유금액"].astype(float)
-h["보유환율"] = h["보유환율"].astype(float)
-h["금일 매매기준율"] = h["통화"].map(rate_map).astype(float)
-h["외환차손익(원)"] = ((h["금일 매매기준율"].values - h["보유환율"].values) * h["보유금액"].values)
+amt = [float(x) for x in h["보유금액"].tolist()]
+book = [float(x) for x in h["보유환율"].tolist()]
+mkt = [float(rate_map.get(c, 0)) for c in h["통화"].tolist()]
+pnl = [(m - b) * a for m, b, a in zip(mkt, book, amt)]
+h["보유금액"] = amt
+h["보유환율"] = book
+h["금일 매매기준율"] = mkt
+h["외환차손익(원)"] = pnl
 
 # 표시용 포맷
 h_disp = h.copy()

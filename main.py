@@ -1027,33 +1027,49 @@ def _run_simulator():
                     rate_labels.append(f"{rv}원")
             rate_list_f = [float(x) for x in rate_list]
         else:
+            # CNY→USD: USD/CNY(재정환율) 밴드 0.01 단위
             rate_list_f = []
-            r = float(cny_lo)
-            while r <= float(cny_hi) + 0.05:
-                rate_list_f.append(round(r, 1))
-                r += 0.1
-            cur_rate = round(float(latest["CNY_KRW"]), 1)
+            r = float(cross_lo)
+            while r <= float(cross_hi) + 0.005:
+                rate_list_f.append(round(r, 2))
+                r += 0.01
+            cur_rate = round(float(latest["USD_CNY"]), 2)
             if cur_rate not in rate_list_f:
                 rate_list_f.append(cur_rate)
                 rate_list_f.sort()
             rate_labels = []
             for rv in rate_list_f:
-                if rv == float(cny_lo):
-                    rate_labels.append(f"{rv:.1f}원 (밴드 하단)")
-                elif rv == float(cny_hi):
-                    rate_labels.append(f"{rv:.1f}원 (밴드 상단)")
+                if rv == float(cross_lo):
+                    rate_labels.append(f"{rv:.2f} (밴드 하단)")
+                elif rv == float(cross_hi):
+                    rate_labels.append(f"{rv:.2f} (밴드 상단)")
                 elif rv == cur_rate:
-                    rate_labels.append(f"{rv:.1f}원 (현재 매매기준율)")
+                    rate_labels.append(f"{rv:.2f} (현재 재정환율)")
                 else:
-                    rate_labels.append(f"{rv:.1f}원")
+                    rate_labels.append(f"{rv:.2f}")
 
         default_idx = next((i for i, lb in enumerate(rate_labels) if "현재" in lb), 0)
         selected = st.selectbox("적용 환율 선택", rate_labels, index=default_idx)
         sim_rate = rate_list_f[rate_labels.index(selected)]
 
-    sim_krw = sim_cny * sim_rate
-    sim_pnl = sim_cny * (sim_rate - sim_book)
-    conv_label = f"{sim_krw:,.0f} 원" if sim_target == "KRW" else f"${sim_krw / usd_rate:,.2f}"
+    if sim_target == "KRW":
+        # CNY→KRW: sim_rate = CNY/KRW 환율
+        sim_krw = sim_cny * sim_rate
+        sim_pnl = sim_cny * (sim_rate - sim_book)
+        conv_label = f"{sim_krw:,.0f} 원"
+        rate_label = f"적용환율 {sim_rate:,.2f}원"
+        pnl_formula = f"({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}"
+    else:
+        # CNY→USD: sim_rate = USD/CNY 재정환율
+        sim_usd = sim_cny / sim_rate
+        # 장부 USD/CNY 역산 (장부 CNY/KRW ÷ 장부시점 USD/KRW 근사 → 직접 재정환율 사용)
+        book_cross = float(latest["USD_CNY"])  # 현재 재정환율 기준 비교
+        sim_pnl_usd = sim_cny * (1/sim_rate - 1/book_cross)
+        sim_pnl = sim_pnl_usd * usd_rate  # KRW 환산
+        conv_label = f"${sim_usd:,.2f}"
+        rate_label = f"적용 재정환율 {sim_rate:.2f}"
+        pnl_formula = f"CNY÷{sim_rate:.2f} vs CNY÷{book_cross:.2f}"
+
     pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
 
     st.markdown(
@@ -1066,12 +1082,12 @@ def _run_simulator():
         f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
         f'<div style="font-size:0.8rem;color:#888;">환전 금액 ({sim_target})</div>'
         f'<div style="font-size:1.3rem;font-weight:700;">{conv_label}</div>'
-        f'<div style="font-size:0.75rem;color:#888;">적용환율 {sim_rate:,.2f}원</div>'
+        f'<div style="font-size:0.75rem;color:#888;">{rate_label}</div>'
         f'</div>'
         f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
-        f'<div style="font-size:0.8rem;color:#888;">외환차손익</div>'
+        f'<div style="font-size:0.8rem;color:#888;">외환차손익 (KRW)</div>'
         f'<div style="font-size:1.3rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>'
-        f'<div style="font-size:0.75rem;color:#888;">({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}</div>'
+        f'<div style="font-size:0.75rem;color:#888;">{pnl_formula}</div>'
         f'</div>'
         f'</div>',
         unsafe_allow_html=True,

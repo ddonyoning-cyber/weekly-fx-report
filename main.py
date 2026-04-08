@@ -989,31 +989,42 @@ st.divider()
 
 # CNY 환전 시뮬레이터
 st.markdown("##### 💱 CNY 환전 시뮬레이터")
-if "sim_rate" not in st.session_state:
-    st.session_state.sim_rate = float(latest["CNY_KRW"])
+
+# 엑셀에서 CNY 보유 데이터 가져오기
+cny_rows = [i for i, c in enumerate(holdings_df["통화"].tolist()) if str(c).upper() == "CNY"]
+if cny_rows:
+    sim_cny = float(str(holdings_df.iloc[cny_rows[0]]["보유금액"]).replace(",", ""))
+    sim_book = float(str(holdings_df.iloc[cny_rows[0]]["보유환율"]).replace(",", ""))
+else:
+    sim_cny = 30000000.0
+    sim_book = 198.50
+
+# 적용환율 선택지 구성
+rate_options = {
+    f"밴드 하단 ({cny_lo}원)": float(cny_lo),
+    f"현재 매매기준율 ({latest['CNY_KRW']:.2f}원)": float(latest["CNY_KRW"]),
+    f"밴드 상단 ({cny_hi}원)": float(cny_hi),
+}
 
 sim_c1, sim_c2 = st.columns(2)
 with sim_c1:
-    sim_cny = st.number_input("보유 CNY 금액", value=10_000_000, step=1_000_000, format="%d")
-    sim_book = st.number_input("보유환율 (장부단가)", value=198.50, step=0.10, format="%.2f")
+    st.markdown(f"**보유 CNY:** {sim_cny:,.0f}")
+    st.markdown(f"**보유환율 (장부단가):** {sim_book:,.2f}원")
 with sim_c2:
-    bc1, bc2, bc3 = st.columns(3)
-    if bc1.button(f"밴드 하단 ({cny_lo})"):
-        st.session_state.sim_rate = float(cny_lo)
-    if bc2.button(f"현재가 ({latest['CNY_KRW']:.2f})"):
-        st.session_state.sim_rate = float(latest["CNY_KRW"])
-    if bc3.button(f"밴드 상단 ({cny_hi})"):
-        st.session_state.sim_rate = float(cny_hi)
-    sim_rate = st.number_input("적용 환율 (KRW/CNY)", value=st.session_state.sim_rate, format="%.2f")
+    selected = st.selectbox("적용 환율 선택", list(rate_options.keys()))
+    sim_rate = rate_options[selected]
 
 sim_krw = sim_cny * sim_rate
 sim_pnl = sim_cny * (sim_rate - sim_book)
-sim_usd = sim_krw / latest["USD_KRW"]
+sim_usd = sim_krw / float(latest["USD_KRW"])
 
 sc1, sc2, sc3 = st.columns(3)
 sc1.metric("환전 금액 (KRW)", f"{sim_krw:,.0f} 원")
-pnl_delta = f"{sim_pnl:+,.0f} 원"
-sc2.metric("외환차손익", pnl_delta)
+pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
+sc2.markdown(
+    f'<div style="font-size:0.85rem;color:#555;">외환차손익</div>'
+    f'<div style="font-size:1.5rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>',
+    unsafe_allow_html=True)
 sc3.metric("USD 환산", f"${sim_usd:,.2f}")
 
 st.divider()

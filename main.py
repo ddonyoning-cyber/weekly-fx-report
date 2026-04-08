@@ -816,11 +816,11 @@ def run_integrated_analysis(folder: str) -> dict:
 #  페이지 렌더링
 # ═══════════════════════════════════════════════════════
 
-st.markdown("## 📊 주간 환율 리포트 — 2026년 4월 1주차")
-st.caption("수집 기간: 2026-01-03 ~ 2026-04-03 · 전주 구간: 3/30 ~ 4/3 · 한국은행 ECOS API")
+st.markdown("## 📊 주간 환율 리포트 — 2026년 4월 2주차")
+st.caption("수집 기간: 2026-01-03 ~ 2026-04-03 · 한국은행 ECOS API")
 
 # ── 데이터 로딩 ──
-with st.spinner("한국은행 API에서 환율 데이터를 불러오는 중..."):
+with st.spinner("데이터 로딩 중..."):
     try:
         df = fetch_exchange_rates()
     except Exception as e:
@@ -830,98 +830,322 @@ with st.spinner("한국은행 API에서 환율 데이터를 불러오는 중..."
 stats = compute_stats(df)
 latest = stats["latest"]
 
+with st.spinner("기관별 리서치 통합 분석 중..."):
+    report = run_integrated_analysis(DATA_DIR)
+
+band = report["band"]
+ca = report["currency_analysis"]
+
+# ── 국민은행 금주 PDF에서 주간 밴드 추출 ──
+inst_bands = report.get("inst_bands", [])
+recent5 = df.tail(5)
+_kb_usd, _kb_cross = None, None
+
+# 파일명에 "금주"가 포함된 국민은행 PDF 찾기
+kb_pdfs = [f for f in os.listdir(DATA_DIR) if "국민" in f and "금주" in f and f.endswith(".pdf")]
+if kb_pdfs:
+    with pdfplumber.open(os.path.join(DATA_DIR, kb_pdfs[0])) as pdf:
+        _kb_text = "\n".join(p.extract_text() or "" for p in pdf.pages[:2]).replace(",", "")
+        m_u = re.search(r'USDKRW\s+(\d{4})\s*[~\-]\s*(\d{4})', _kb_text)
+        if m_u:
+            _kb_usd = (int(m_u.group(1)), int(m_u.group(2)))
+        m_c = re.search(r'USDCNY\s+(\d\.\d{2,3})\s*[~\-]\s*(\d\.\d{2,3})', _kb_text)
+        if m_c:
+            _kb_cross = (float(m_c.group(1)), float(m_c.group(2)))
+
+band["USD/KRW"] = _kb_usd or (int(round(recent5["USD_KRW"].mean()) - 5), int(round(recent5["USD_KRW"].mean()) + 5))
+band["USD/CNY"] = _kb_cross or (round(recent5["USD_CNY"].mean() - 0.03, 2), round(recent5["USD_CNY"].mean() + 0.03, 2))
+usd_lo, usd_hi = band["USD/KRW"]
+cross_lo, cross_hi = band["USD/CNY"]
+cny_lo = int(round(usd_lo / cross_hi))
+cny_hi = int(round(usd_hi / cross_lo))
+band["CNY/KRW"] = (cny_lo, cny_hi)
+
+# ── 방향성 판단 (1순위: 수치 → 2순위: PDF 보정) ──
+avg_lw = stats["avg_lw"]
+
+def _decide_dir(band_mid, prev_avg, threshold, cur_key):
+    pct = (band_mid - prev_avg) / prev_avg if prev_avg else 0
+    if pct > threshold:
+        return "상승"
+    elif pct < -threshold:
+        return "하락"
+    # 보합 → PDF 보정
+    pdf_d = ca.get(cur_key, {}).get("direction", "보합")
+    return pdf_d if pdf_d != "보합" else "보합"
+
+usd_dir = _decide_dir((usd_lo + usd_hi) / 2, avg_lw["USD_KRW"], 0.005, "USD_KRW")
+cny_dir = _decide_dir((cny_lo + cny_hi) / 2, avg_lw["CNY_KRW"], 0.004, "CNY_KRW")
+cross_dir = _decide_dir((cross_lo + cross_hi) / 2, avg_lw["USD_CNY"], 0.002, "USD_CNY")
+cross_sub = "위안화 절하" if cross_dir == "상승" else ("위안화 절상" if cross_dir == "하락" else "")
+
+def _dir_color(d):
+    return {"상승": "#C00000", "하락": "#4A90D9"}.get(d, "#2E8B57")
+
+def _dir_arrow(d):
+    return {"상승": "↑", "하락": "↓"}.get(d, "→")
+
+def _dir_bg(d):
+    return {"상승": ("#fdf2f2", "#C00000"), "하락": ("#f2f6fd", "#4A90D9")}.get(d, ("#f2faf5", "#2E8B57"))
+
+def _forecast_card(label, band_str, direction, sub=""):
+    color = _dir_color(direction)
+    arrow = _dir_arrow(direction)
+    sub_html = f' <span style="font-size:0.8rem;color:#888;">{sub}</span>' if sub else ""
+    return (
+        f'<div style="background:linear-gradient(135deg,#667eea0d,#764ba20d);'
+        f'border:1px solid #ddd;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.03);">'
+        f'<div style="font-size:0.85rem;color:#555;">{label}</div>'
+        f'<div style="font-size:2rem;font-weight:700;color:#1a1a1a;margin:4px 0;">{band_str}</div>'
+        f'<div style="font-size:1rem;color:{color};font-weight:600;">{arrow} {direction}{sub_html}</div>'
+        f'</div>'
+    )
+
+# ── 사이드바: 외화 보유 데이터 업로드 ──
+with st.sidebar:
+    st.subheader("외화 보유 데이터")
+    uploaded = st.file_uploader("Excel/CSV 업로드", type=["xlsx", "csv"])
+    if uploaded:
+        holdings_df = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
+    else:
+        holdings_df = pd.DataFrame({
+            "통화": ["USD", "CNY"],
+            "보유금액": [5_000_000, 30_000_000],
+            "보유환율": [1_450.00, 198.50],
+        })
+    st.caption("컬럼: 통화, 보유금액, 보유환율")
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 1: 전주 환율 요약 카드
+# 섹션 1: 당사 외화 보유 현황
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown('<div class="section-header">1. 전주 환율 요약 (3/30 ~ 4/3)</div>', unsafe_allow_html=True)
+latest_date = df.index[-1].strftime("%Y-%m-%d")
+st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매기준율: {latest_date})</div>', unsafe_allow_html=True)
+
+rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
+h = holdings_df.copy()
+h["금일 매매기준율"] = h["통화"].map(rate_map)
+h["외환차손익(원)"] = (h["금일 매매기준율"] - h["보유환율"]) * h["보유금액"]
+
+# 표시용 포맷
+h_disp = h.copy()
+h_disp["보유금액"] = h_disp["보유금액"].apply(lambda x: f"{x:,.0f}")
+h_disp["보유환율"] = h_disp["보유환율"].apply(lambda x: f"{x:,.2f}")
+h_disp["금일 매매기준율"] = h_disp["금일 매매기준율"].apply(lambda x: f"{x:,.2f}")
+h_disp["외환차손익(원)"] = h["외환차손익(원)"].apply(lambda x: f"{x:+,.0f}")
+
+st.dataframe(h_disp, use_container_width=True, hide_index=True)
+
+total_pnl = h["외환차손익(원)"].sum()
+pnl_color = "#C00000" if total_pnl > 0 else "#4A90D9"
+st.markdown(f'<div style="text-align:right;font-size:1.1rem;font-weight:700;color:{pnl_color};">'
+            f'총 외환차손익: {total_pnl:+,.0f}원</div>', unsafe_allow_html=True)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 섹션 2: 금주 환율 전망
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+st.markdown(f'<div class="section-header">2. 금주 환율 전망 ({REPORT_WEEK_START[4:6]}/{REPORT_WEEK_START[6:]} ~ {REPORT_WEEK_END[4:6]}/{REPORT_WEEK_END[6:]})</div>', unsafe_allow_html=True)
+
+# 당일 매매기준율 카드
+st.markdown(f"**당일 매매기준율** ({latest_date})")
+r1, r2, r3 = st.columns(3)
+r1.metric("USD/KRW", f"{latest['USD_KRW']:,.2f} 원")
+r2.metric("CNY/KRW", f"{latest['CNY_KRW']:,.2f} 원")
+r3.metric("USD/CNY (재정)", f"{latest['USD_CNY']:.4f}")
+
+st.markdown("")
+
+# 금주 전망 밴드 카드
+st.markdown("**금주 전망 밴드** (출처: 국민은행)")
+fc1, fc2, fc3 = st.columns(3)
+fc1.markdown(_forecast_card("USD / KRW", f"{usd_lo:,} ~ {usd_hi:,} 원", usd_dir), unsafe_allow_html=True)
+fc2.markdown(_forecast_card("CNY / KRW", f"{cny_lo:,} ~ {cny_hi:,} 원", cny_dir), unsafe_allow_html=True)
+fc3.markdown(_forecast_card("USD / CNY (재정)", f"{cross_lo} ~ {cross_hi}", cross_dir, cross_sub), unsafe_allow_html=True)
+
+st.divider()
+
+# 통화별 상승/하락 요인 (표 형태)
+st.markdown("##### 📋 통화별 상승·하락 요인")
+factor_data = []
+for cur_key, label in [("USD_KRW", "USD/KRW"), ("CNY_KRW", "CNY/KRW"), ("USD_CNY", "USD/CNY")]:
+    info = ca.get(cur_key, {})
+    up = " · ".join(info.get("upside_vars", [])) or "-"
+    dn = " · ".join(info.get("downside_vars", [])) or "-"
+    d = {"USD_KRW": usd_dir, "CNY_KRW": cny_dir, "USD_CNY": cross_dir}[cur_key]
+    factor_data.append({"통화": label, "상방 요인": up, "하방 요인": dn, "전망": f"{_dir_arrow(d)} {d}"})
+st.dataframe(pd.DataFrame(factor_data), use_container_width=True, hide_index=True)
+
+st.divider()
+
+# CNY 환전 시뮬레이터
+st.markdown("##### 💱 CNY 환전 시뮬레이터")
+if "sim_rate" not in st.session_state:
+    st.session_state.sim_rate = float(latest["CNY_KRW"])
+
+sim_c1, sim_c2 = st.columns(2)
+with sim_c1:
+    sim_cny = st.number_input("보유 CNY 금액", value=10_000_000, step=1_000_000, format="%d")
+    sim_book = st.number_input("보유환율 (장부단가)", value=198.50, step=0.10, format="%.2f")
+with sim_c2:
+    bc1, bc2, bc3 = st.columns(3)
+    if bc1.button(f"밴드 하단 ({cny_lo})"):
+        st.session_state.sim_rate = float(cny_lo)
+    if bc2.button(f"현재가 ({latest['CNY_KRW']:.2f})"):
+        st.session_state.sim_rate = float(latest["CNY_KRW"])
+    if bc3.button(f"밴드 상단 ({cny_hi})"):
+        st.session_state.sim_rate = float(cny_hi)
+    sim_rate = st.number_input("적용 환율 (KRW/CNY)", value=st.session_state.sim_rate, format="%.2f")
+
+sim_krw = sim_cny * sim_rate
+sim_pnl = sim_cny * (sim_rate - sim_book)
+sim_usd = sim_krw / latest["USD_KRW"]
+
+sc1, sc2, sc3 = st.columns(3)
+sc1.metric("환전 금액 (KRW)", f"{sim_krw:,.0f} 원")
+pnl_delta = f"{sim_pnl:+,.0f} 원"
+sc2.metric("외환차손익", pnl_delta)
+sc3.metric("USD 환산", f"${sim_usd:,.2f}")
+
+st.divider()
+
+# 뉴스 원문
+news = report["news"]
+if news.get("url"):
+    with st.expander(f"📰 {news.get('title', '')[:45]}…"):
+        if news.get("body"):
+            st.markdown(news["body"][:600] + "…" if len(news.get("body", "")) > 600 else news.get("body", ""))
+        st.caption(f"[기사 원문]({news['url']})")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 섹션 3: 전주 환율 요약 및 복기
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+st.markdown(f'<div class="section-header">3. 전주 환율 요약 및 복기 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})</div>', unsafe_allow_html=True)
+
+# 메트릭 카드 (% + 금액 차이 병기)
+lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
+usd_diff = stats["avg_lw"]["USD_KRW"] - stats["avg_prev"]["USD_KRW"]
+cny_diff = stats["avg_lw"]["CNY_KRW"] - stats["avg_prev"]["CNY_KRW"]
+cross_diff = stats["avg_lw"]["USD_CNY"] - stats["avg_prev"]["USD_CNY"]
 
 c1, c2, c3 = st.columns(3)
-c1.metric(
-    "USD / KRW (전주 평균)", f"{stats['avg_lw']['USD_KRW']:,.2f} 원",
-    delta=f"{stats['usd_vs_pw']:+.2f}% (전전주 대비)", delta_color="inverse",
-)
-c2.metric(
-    "CNY / KRW (전주 평균)", f"{stats['avg_lw']['CNY_KRW']:,.2f} 원",
-    delta=f"{stats['cny_vs_pw']:+.2f}% (전전주 대비)", delta_color="inverse",
-)
-c3.metric(
-    "USD / CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
-    delta=f"{stats['cross_vs_pw']:+.2f}% (전전주 대비)", delta_color="inverse",
-)
+c1.metric("USD/KRW (전주 평균)", f"{stats['avg_lw']['USD_KRW']:,.2f} 원",
+          delta=f"{stats['usd_vs_pw']:+.2f}% ({usd_diff:+,.2f}원)", delta_color="inverse")
+c2.metric("CNY/KRW (전주 평균)", f"{stats['avg_lw']['CNY_KRW']:,.2f} 원",
+          delta=f"{stats['cny_vs_pw']:+.2f}% ({cny_diff:+,.2f}원)", delta_color="inverse")
+c3.metric("USD/CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
+          delta=f"{stats['cross_vs_pw']:+.2f}% ({cross_diff:+.4f})", delta_color="inverse")
 
-# 전주 요약 테이블
-lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
+# 요약 테이블
 if not lw_data.empty:
     summary = pd.DataFrame({
         "": ["전주 평균", "전주 최고", "전주 최저", "3개월 평균"],
-        "USD/KRW": [
-            f"{lw_data['USD_KRW'].mean():,.2f}",
-            f"{lw_data['USD_KRW'].max():,.2f}",
-            f"{lw_data['USD_KRW'].min():,.2f}",
-            f"{stats['avg_3m']['USD_KRW']:,.2f}",
-        ],
-        "CNY/KRW": [
-            f"{lw_data['CNY_KRW'].mean():,.2f}",
-            f"{lw_data['CNY_KRW'].max():,.2f}",
-            f"{lw_data['CNY_KRW'].min():,.2f}",
-            f"{stats['avg_3m']['CNY_KRW']:,.2f}",
-        ],
-        "USD/CNY": [
-            f"{lw_data['USD_CNY'].mean():.4f}",
-            f"{lw_data['USD_CNY'].max():.4f}",
-            f"{lw_data['USD_CNY'].min():.4f}",
-            f"{stats['avg_3m']['USD_CNY']:.4f}",
-        ],
+        "USD/KRW": [f"{lw_data['USD_KRW'].mean():,.2f}", f"{lw_data['USD_KRW'].max():,.2f}",
+                    f"{lw_data['USD_KRW'].min():,.2f}", f"{stats['avg_3m']['USD_KRW']:,.2f}"],
+        "CNY/KRW": [f"{lw_data['CNY_KRW'].mean():,.2f}", f"{lw_data['CNY_KRW'].max():,.2f}",
+                    f"{lw_data['CNY_KRW'].min():,.2f}", f"{stats['avg_3m']['CNY_KRW']:,.2f}"],
+        "USD/CNY": [f"{lw_data['USD_CNY'].mean():.4f}", f"{lw_data['USD_CNY'].max():.4f}",
+                    f"{lw_data['USD_CNY'].min():.4f}", f"{stats['avg_3m']['USD_CNY']:.4f}"],
     })
     st.dataframe(summary, use_container_width=True, hide_index=True)
 
+# 전주 복기: 전망 vs 실제
+st.markdown("##### 🔍 전주 복기 — 전망 vs 실제")
+prev_pdfs = [f for f in os.listdir(DATA_DIR) if "전주" in f and f.endswith(".pdf")]
+prev_forecast = {}
+for pf in prev_pdfs:
+    with pdfplumber.open(os.path.join(DATA_DIR, pf)) as pdf:
+        pt = "\n".join(p.extract_text() or "" for p in pdf.pages[:2]).replace(",", "")
+    mu = re.search(r'USDKRW\s+(\d{4})\s*[~\-]\s*(\d{4})', pt)
+    if mu and "USD/KRW" not in prev_forecast:
+        prev_forecast["USD/KRW"] = (int(mu.group(1)), int(mu.group(2)))
+    mc = re.search(r'USDCNY\s+(\d\.\d{2,3})\s*[~\-]\s*(\d\.\d{2,3})', pt)
+    if mc and "USD/CNY" not in prev_forecast:
+        prev_forecast["USD/CNY"] = (float(mc.group(1)), float(mc.group(2)))
+
+if prev_forecast and not lw_data.empty:
+    review_rows = []
+    for cur, col in [("USD/KRW", "USD_KRW"), ("USD/CNY", "USD_CNY")]:
+        if cur not in prev_forecast:
+            continue
+        f_lo, f_hi = prev_forecast[cur]
+        a_lo, a_hi = lw_data[col].min(), lw_data[col].max()
+        if a_lo >= f_lo and a_hi <= f_hi:
+            hit = "✅ 범위 내"
+        elif a_hi > f_hi:
+            hit = f"⬆️ 상단 이탈 ({a_hi:,.2f})"
+        else:
+            hit = f"⬇️ 하단 이탈 ({a_lo:,.2f})"
+
+        if cur == "USD/CNY":
+            review_rows.append({"통화": cur, "전주 예상": f"{f_lo}~{f_hi}",
+                                "전주 실제": f"{a_lo:.4f}~{a_hi:.4f}", "적중": hit})
+        else:
+            review_rows.append({"통화": cur, "전주 예상": f"{f_lo:,}~{f_hi:,}",
+                                "전주 실제": f"{a_lo:,.2f}~{a_hi:,.2f}", "적중": hit})
+    if review_rows:
+        st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
+
+    # 복기 코멘트
+    if "USD/KRW" in prev_forecast:
+        pf_lo, pf_hi = prev_forecast["USD/KRW"]
+        act_lo = lw_data["USD_KRW"].min()
+        act_hi = lw_data["USD_KRW"].max()
+        if act_hi > pf_hi:
+            review_txt = (f"전주 USD/KRW는 {act_lo:,.0f}~{act_hi:,.0f}원에서 등락하며, "
+                          f"예상 상단({pf_hi:,}원)을 상회. 중동 지정학 리스크 확대가 주요 원인으로 분석됨.")
+        elif act_lo < pf_lo:
+            review_txt = (f"전주 USD/KRW는 {act_lo:,.0f}~{act_hi:,.0f}원에서 등락하며, "
+                          f"예상 하단({pf_lo:,}원)을 하회. 종전 기대감에 따른 위험선호 회복이 원인.")
+        else:
+            review_txt = (f"전주 USD/KRW는 {act_lo:,.0f}~{act_hi:,.0f}원에서 등락하며, "
+                          f"예상 범위({pf_lo:,}~{pf_hi:,}원) 내에서 마감.")
+        st.markdown(f'<div class="comment-box">{review_txt}</div>', unsafe_allow_html=True)
+else:
+    st.caption("전주 전망 PDF가 없어 복기 분석을 수행할 수 없습니다.")
+
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 2: 3개월 환율 추이 + 전주 분석 코멘트
+# 섹션 4: 직전 3개월 환율 추이
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown('<div class="section-header">2. 환율 추이 및 전주 분석</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">4. 직전 3개월 환율 추이</div>', unsafe_allow_html=True)
 
 fig = build_chart(df)
+
+# 이벤트 마커 추가 (뉴스 기반)
+event_dates, event_rates, event_texts = [], [], []
+for ind in report.get("indicators", []):
+    if ind["date"] == "미정":
+        continue
+    try:
+        parts = ind["date"].split("/")
+        ev_date = pd.Timestamp(f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}")
+        if df.index[0] <= ev_date <= df.index[-1]:
+            nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
+            event_dates.append(nearest)
+            event_rates.append(df.loc[nearest, "USD_KRW"])
+            event_texts.append(ind["name"])
+    except (ValueError, IndexError):
+        continue
+
+if event_dates:
+    fig.add_trace(go.Scatter(
+        x=event_dates, y=event_rates, mode="markers",
+        marker=dict(size=10, color="#e6a817", symbol="diamond", line=dict(width=1, color="#333")),
+        name="주요 이벤트",
+        hovertemplate="%{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%m/%d}<extra></extra>",
+        text=event_texts,
+    ), secondary_y=False)
+
 st.plotly_chart(fig, use_container_width=True)
 
-# AI 코멘트 박스 (상승=빨강, 하락=파랑)
-def _colored(val, label):
-    """값에 따라 빨간(상승)/파란(하락) 색상 span을 반환."""
-    color = "#C00000" if val > 0 else "#2E75B6"
-    if "3m" in label:
-        text = "높은" if val > 0 else "낮은"
-        return f'<span style="color:{color}"><b>{abs(val):.1f}% {text}</b></span>'
-    else:
-        text = "상승" if val > 0 else "하락"
-        return f'<span style="color:{color}"><b>{abs(val):.2f}% {text}세</b></span>'
-
-avg = stats["avg_lw"]
-comment = (
-    f"• <b>USD/KRW</b> 전주 평균 {avg['USD_KRW']:,.2f}원은 "
-    f"3개월 평균({stats['avg_3m']['USD_KRW']:,.2f}) 대비 "
-    f"{_colored(stats['usd_vs_3m'], '3m')} 수준이며, "
-    f"전전주 대비 {_colored(stats['usd_vs_pw'], 'pw')}임.<br>"
-    f"• <b>CNY/KRW</b> 전주 평균 {avg['CNY_KRW']:,.2f}원은 "
-    f"3개월 평균({stats['avg_3m']['CNY_KRW']:,.2f}) 대비 "
-    f"{_colored(stats['cny_vs_3m'], '3m')} 수준이며, "
-    f"전전주 대비 {_colored(stats['cny_vs_pw'], 'pw')}임.<br>"
-    f"• <b>USD/CNY(재정)</b> 전주 평균 {avg['USD_CNY']:.4f}은 "
-    f"3개월 평균({stats['avg_3m']['USD_CNY']:.4f}) 대비 "
-    f"{_colored(stats['cross_vs_3m'], '3m')}, "
-    f"전전주 대비 {_colored(stats['cross_vs_pw'], 'pw')}."
-)
-st.markdown(f'<div class="comment-box">{comment}</div>', unsafe_allow_html=True)
-
+# 원본 데이터 테이블
 with st.expander("원본 데이터 테이블 (최근 30영업일)"):
     disp = df.tail(30).copy()
     disp.columns = ["USD/KRW", "CNY/KRW", "USD/CNY"]
-
-    # 전주 구간 행 배경색 적용
     lw_start = pd.Timestamp(LAST_WEEK_START)
     lw_end = pd.Timestamp(LAST_WEEK_END)
     is_lw = [(lw_start <= idx <= lw_end) for idx in disp.index]
-
-    # 인덱스를 문자열로 변환
     disp.index = disp.index.strftime("%Y-%m-%d")
 
     def _highlight_lw(row):
@@ -935,215 +1159,6 @@ with st.expander("원본 데이터 테이블 (최근 30영업일)"):
               .apply(_highlight_lw, axis=1))
     st.dataframe(styled, use_container_width=True)
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 3: 금주 환율 전망
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown('<div class="section-header">3. 금주 환율 전망 (4/7 ~ 4/11)</div>', unsafe_allow_html=True)
-
-with st.spinner("기관별 리서치 통합 분석 중..."):
-    report = run_integrated_analysis(DATA_DIR)
-
-band = report["band"]
-ca = report["currency_analysis"]
-
-# ── 카드 밴드: 국민은행 PDF 주간예상범위 (텍스트 직접 추출) ──
-inst_bands = report.get("inst_bands", [])
-recent5 = df.tail(5)
-
-_kb_usd = None
-_kb_cross = None
-kb_pdf = os.path.join(DATA_DIR, "국민은행_주간_전망자료.pdf")
-if os.path.isfile(kb_pdf):
-    with pdfplumber.open(kb_pdf) as pdf:
-        text = "\n".join(p.extract_text() or "" for p in pdf.pages[:2]).replace(",", "")
-        # "USDKRW 1490~1540 1470~1540" 형태에서 첫 번째(주간) 범위 추출
-        m_usd = re.search(r'USDKRW\s+(\d{4})\s*[~\-]\s*(\d{4})', text)
-        if m_usd:
-            _kb_usd = (int(m_usd.group(1)), int(m_usd.group(2)))
-        m_cny = re.search(r'USDCNY\s+(\d\.\d{2,3})\s*[~\-]\s*(\d\.\d{2,3})', text)
-        if m_cny:
-            _kb_cross = (float(m_cny.group(1)), float(m_cny.group(2)))
-
-band["USD/KRW"] = _kb_usd or (int(round(recent5["USD_KRW"].mean()) - 5), int(round(recent5["USD_KRW"].mean()) + 5))
-band["USD/CNY"] = _kb_cross or (round(recent5["USD_CNY"].mean() - 0.03, 2), round(recent5["USD_CNY"].mean() + 0.03, 2))
-
-# CNY/KRW: 국민은행 직접 제공 없음 → USD/KRW ÷ USD/CNY 역산
-usd_lo_t, usd_hi_t = band["USD/KRW"]
-cross_lo_t, cross_hi_t = band["USD/CNY"]
-cny_lo_calc = int(round(usd_lo_t / cross_hi_t))
-cny_hi_calc = int(round(usd_hi_t / cross_lo_t))
-band["CNY/KRW"] = (cny_lo_calc, cny_hi_calc)
-
-# 역산 밴드를 기관별 표에도 추가
-if not any(b["기관"] == "국민은행" and b["통화"] == "CNY/KRW" for b in inst_bands):
-    inst_bands.append({"기관": "국민은행", "통화": "CNY/KRW",
-                       "주간 예상 범위": f"{cny_lo_calc:,}~{cny_hi_calc:,} (역산)"})
-
-usd_lo, usd_hi = band["USD/KRW"]
-cny_lo, cny_hi = band["CNY/KRW"]
-cross_lo, cross_hi = band["USD/CNY"]
-
-# ── 방향성 판단 (1순위: 수치 기반 → 2순위: PDF 정성 보정) ──
-avg_lw = stats["avg_lw"]
-
-# 1순위: 통화별 임계치 적용
-def _decide_dir_step1(band_mid, prev_avg, threshold):
-    """수치 기반 1차 판단."""
-    pct = (band_mid - prev_avg) / prev_avg if prev_avg else 0
-    if pct > threshold:
-        return "상승", pct
-    elif pct < -threshold:
-        return "하락", pct
-    return "보합", pct
-
-# 2순위: PDF 정성 보정 (보합일 때만 적용)
-def _pdf_override(cur_key):
-    """PDF에서 강한 방향성 제시 시 보합을 오버라이드."""
-    info = ca.get(cur_key, {})
-    return info.get("direction", "보합")
-
-# USD/KRW: 임계치 ±0.5%
-usd_dir, usd_pct = _decide_dir_step1((usd_lo + usd_hi) / 2, avg_lw["USD_KRW"], 0.005)
-if usd_dir == "보합":
-    pdf_view = _pdf_override("USD_KRW")
-    if pdf_view != "보합":
-        usd_dir = pdf_view  # PDF가 상승/하락 명시 시 보정
-
-# CNY/KRW: 임계치 ±0.4%
-cny_dir, cny_pct = _decide_dir_step1((cny_lo + cny_hi) / 2, avg_lw["CNY_KRW"], 0.004)
-if cny_dir == "보합":
-    pdf_view = _pdf_override("CNY_KRW")
-    if pdf_view != "보합":
-        cny_dir = pdf_view
-
-# USD/CNY: 임계치 ±0.2%
-cross_dir, cross_pct = _decide_dir_step1((cross_lo + cross_hi) / 2, avg_lw["USD_CNY"], 0.002)
-if cross_dir == "보합":
-    pdf_view = _pdf_override("USD_CNY")
-    if pdf_view != "보합":
-        cross_dir = pdf_view
-
-# USD/CNY 서브라벨
-cross_sub = "위안화 절하" if cross_dir == "상승" else ("위안화 절상" if cross_dir == "하락" else "")
-
-def _dir_color(d):
-    if d == "상승": return "#C00000"
-    if d == "하락": return "#4A90D9"
-    return "#2E8B57"
-
-def _dir_arrow(d):
-    if d == "상승": return "↑"
-    if d == "하락": return "↓"
-    return "→"
-
-def _dir_bg(d):
-    if d == "상승": return ("#fdf2f2", "#C00000")
-    if d == "하락": return ("#f2f6fd", "#4A90D9")
-    return ("#f2faf5", "#2E8B57")
-
-# ── 3대 통화 전망 카드 ──
-def _forecast_card(label, band_str, direction, sub=""):
-    color = _dir_color(direction)
-    arrow = _dir_arrow(direction)
-    sub_html = f' <span style="font-size:0.8rem;color:#888;">{sub}</span>' if sub else ""
-    return (
-        f'<div style="background:linear-gradient(135deg,#667eea0d,#764ba20d);'
-        f'border:1px solid #ddd;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.03);">'
-        f'<div style="font-size:0.85rem;color:#555;font-weight:400;">{label}</div>'
-        f'<div style="font-size:2rem;font-weight:700;color:#1a1a1a;margin:4px 0;">{band_str}</div>'
-        f'<div style="font-size:1rem;color:{color};font-weight:600;">{arrow} {direction}{sub_html}</div>'
-        f'</div>'
-    )
-
-fc1, fc2, fc3 = st.columns(3)
-fc1.markdown(_forecast_card("USD / KRW (금주 전망)", f"{usd_lo:,} ~ {usd_hi:,} 원", usd_dir), unsafe_allow_html=True)
-fc2.markdown(_forecast_card("CNY / KRW (금주 전망)", f"{cny_lo:,} ~ {cny_hi:,} 원", cny_dir), unsafe_allow_html=True)
-fc3.markdown(_forecast_card("USD / CNY 재정 (금주 전망)", f"{cross_lo} ~ {cross_hi}", cross_dir, cross_sub), unsafe_allow_html=True)
-
-st.caption("출처: 국민은행 주간 외환 전망 (CNY/KRW는 USD/KRW ÷ USD/CNY 역산)")
-
-st.divider()
-
-# ── 통화별 전망 분석 (색상 카드 방향과 연동) ──
-st.markdown("##### 📝 통화별 분석")
-st.caption("신한은행 · 국민은행 PDF + 서울파이낸셜 [주간환율전망] 종합")
-
-# USD/KRW
-usd_bg, usd_bc = _dir_bg(usd_dir)
-st.markdown(
-    f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:{usd_bg};border-radius:8px;border-left:4px solid {usd_bc};">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:{usd_bc};margin-bottom:6px;">'
-    f'{_dir_arrow(usd_dir)} USD/KRW — {usd_lo:,}~{usd_hi:,}원</div>'
-    f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
-    f'<b>변동 요인:</b> '
-    f'<b>이란 전쟁 불확실성</b>과 <b>국제유가 고공행진</b>(호르무즈 해협 통항 리스크)이 '
-    f'달러 매수 심리를 자극하는 가운데, <b>4월 외국인 배당 역송금</b> 수요가 본격화되며 '
-    f'실수급 측면에서도 상방 압력이 가중되고 있음. '
-    f'지난주 환율은 <b>1,497~1,536원</b> 범위에서 등락하며 상방 쏠림이 우세했음.'
-    f'<br>'
-    f'<b>금주 전망:</b> '
-    f'목요일(<b>4/10</b>) <b>미국 3월 CPI</b>에서 고유가가 물가에 반영될 경우, '
-    f'연준 금리인하 기대 후퇴 → 달러 강세 → 상단 <b>{usd_hi:,}원</b> 테스트 가능성 높음. '
-    f'다만 금요일(<b>4/11</b>) <b>한국은행 금통위</b>에서 당국의 원화 약세 쏠림 경계 발언 및 '
-    f'외환시장 개입 의지가 확인되면 상단이 제한될 전망. '
-    f'수출업체 고점 매도세도 하방 지지 요인으로 작용.'
-    f'</div></div></div>',
-    unsafe_allow_html=True,
-)
-
-# CNY/KRW
-cny_bg, cny_bc = _dir_bg(cny_dir)
-st.markdown(
-    f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:{cny_bg};border-radius:8px;border-left:4px solid {cny_bc};">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:{cny_bc};margin-bottom:6px;">'
-    f'{_dir_arrow(cny_dir)} CNY/KRW — {cny_lo:,}~{cny_hi:,}원</div>'
-    f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
-    f'<b>변동 요인:</b> '
-    f'위안화 프록시 통화인 원화가 달러 강세에 동반 약세를 보이는 가운데, '
-    f'<b>중국 내수 둔화</b> 우려와 <b>미중 관세 리스크</b> 재부각이 위안화 절하 압력을 자극. '
-    f'원/위안 환율은 달러/원 상승에도 불구, 위안화 자체 약세로 제한적 변동을 보임.'
-    f'<br>'
-    f'<b>금주 전망:</b> '
-    f'중동 리스크에 따른 글로벌 안전자산 선호가 지속되면 위안화 추가 약세 → '
-    f'CNY/KRW <b>{cny_lo:,}원</b>대 하단 테스트 가능성. '
-    f'반면 호르무즈 해협 정상화 조짐이나 미중 무역 협상 진전 시 '
-    f'위안화 반등과 함께 <b>{cny_hi:,}원</b>대 회복 시도 전망.'
-    f'</div></div></div>',
-    unsafe_allow_html=True,
-)
-
-# USD/CNY
-cross_bg, cross_bc = _dir_bg(cross_dir)
-st.markdown(
-    f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:{cross_bg};border-radius:8px;border-left:4px solid {cross_bc};">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:{cross_bc};margin-bottom:6px;">'
-    f'{_dir_arrow(cross_dir)} USD/CNY (재정) — {cross_lo}~{cross_hi}</div>'
-    f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
-    f'<b>변동 요인:</b> '
-    f'달러 강세 기조에도 <b>인민은행(PBOC)</b>이 기준환율 고시를 통해 위안화 급락을 방어하며 '
-    f'안정적 관리 기조를 유지 중. 지정학적 이벤트에 상대적으로 둔감한 움직임을 보이고 있음.'
-    f'<br>'
-    f'<b>금주 전망:</b> '
-    f'PBOC의 적극적 환율 방어 의지가 지속되는 한, 재정환율은 '
-    f'<b>{cross_lo}~{cross_hi}</b> 범위 내 제한적 등락이 전망됨. '
-    f'다만 미국 CPI 서프라이즈 시 달러 인덱스 급등 → 위안화 절하 압력으로 '
-    f'상단 이탈 가능성도 열어두어야 함.'
-    f'</div></div></div>',
-    unsafe_allow_html=True,
-)
-
-# ── 뉴스 원문 접힘 ──
-news = report["news"]
-if news.get("url"):
-    with st.expander(f"📰 {news.get('title', '')[:45]}… — 원문 보기"):
-        if news.get("body"):
-            st.markdown(news["body"][:600] + "…" if len(news.get("body", "")) > 600 else news.get("body", ""))
-        st.caption(f"[기사 원문]({news['url']})")
-
 # ── 푸터 ──
 st.divider()
-st.caption("ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · 2026년 4월 1주차 리포트")
+st.caption("ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · 2026년 4월 2주차 리포트")

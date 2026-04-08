@@ -943,27 +943,26 @@ with st.spinner("기관별 리서치 통합 분석 중..."):
 band = report["band"]
 ca = report["currency_analysis"]
 
-# ── 카드 밴드: 국민은행 PDF 기준 ──
+# ── 카드 밴드: 국민은행 PDF 주간예상범위 (텍스트 직접 추출) ──
 inst_bands = report.get("inst_bands", [])
 recent5 = df.tail(5)
 
-def _kb_band(currency):
-    """국민은행 밴드를 우선 반환."""
-    for b in inst_bands:
-        if b["기관"] == "국민은행" and b["통화"] == currency:
-            rng = b["주간 예상 범위"].replace(",", "").replace(" (역산)", "")
-            m = re.match(r'([\d.]+)\s*~\s*([\d.]+)', rng)
-            if m:
-                if currency == "USD/CNY":
-                    return (float(m.group(1)), float(m.group(2)))
-                return (int(float(m.group(1))), int(float(m.group(2))))
-    return None
+_kb_usd = None
+_kb_cross = None
+kb_pdf = os.path.join(DATA_DIR, "국민은행_주간_전망자료.pdf")
+if os.path.isfile(kb_pdf):
+    with pdfplumber.open(kb_pdf) as pdf:
+        text = "\n".join(p.extract_text() or "" for p in pdf.pages[:2]).replace(",", "")
+        # "USDKRW 1490~1540 1470~1540" 형태에서 첫 번째(주간) 범위 추출
+        m_usd = re.search(r'USDKRW\s+(\d{4})\s*[~\-]\s*(\d{4})', text)
+        if m_usd:
+            _kb_usd = (int(m_usd.group(1)), int(m_usd.group(2)))
+        m_cny = re.search(r'USDCNY\s+(\d\.\d{2,3})\s*[~\-]\s*(\d\.\d{2,3})', text)
+        if m_cny:
+            _kb_cross = (float(m_cny.group(1)), float(m_cny.group(2)))
 
-# USD/KRW, USD/CNY: 국민은행 PDF → 폴백(최근 5일)
-band["USD/KRW"] = _kb_band("USD/KRW") or band.get("USD/KRW") or (
-    int(round(recent5["USD_KRW"].mean()) - 5), int(round(recent5["USD_KRW"].mean()) + 5))
-band["USD/CNY"] = _kb_band("USD/CNY") or band.get("USD/CNY") or (
-    round(recent5["USD_CNY"].mean() - 0.03, 2), round(recent5["USD_CNY"].mean() + 0.03, 2))
+band["USD/KRW"] = _kb_usd or (int(round(recent5["USD_KRW"].mean()) - 5), int(round(recent5["USD_KRW"].mean()) + 5))
+band["USD/CNY"] = _kb_cross or (round(recent5["USD_CNY"].mean() - 0.03, 2), round(recent5["USD_CNY"].mean() + 0.03, 2))
 
 # CNY/KRW: 국민은행 직접 제공 없음 → USD/KRW ÷ USD/CNY 역산
 usd_lo_t, usd_hi_t = band["USD/KRW"]

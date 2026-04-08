@@ -910,8 +910,8 @@ with st.sidebar:
     else:
         holdings_df = pd.DataFrame({
             "통화": ["USD", "CNY"],
-            "보유금액": [5_000_000, 30_000_000],
-            "보유환율": [1_450.00, 198.50],
+            "보유금액": [5000000.0, 30000000.0],
+            "보유환율": [1450.00, 198.50],
         })
     st.caption("컬럼: 통화, 보유금액, 보유환율")
 
@@ -923,10 +923,10 @@ st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매
 
 rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
 h = holdings_df.copy()
-h["보유금액"] = pd.to_numeric(h["보유금액"], errors="coerce").fillna(0)
-h["보유환율"] = pd.to_numeric(h["보유환율"], errors="coerce").fillna(0)
+h["보유금액"] = h["보유금액"].astype(float)
+h["보유환율"] = h["보유환율"].astype(float)
 h["금일 매매기준율"] = h["통화"].map(rate_map).astype(float)
-h["외환차손익(원)"] = (h["금일 매매기준율"] - h["보유환율"]) * h["보유금액"]
+h["외환차손익(원)"] = ((h["금일 매매기준율"].values - h["보유환율"].values) * h["보유금액"].values)
 
 # 표시용 포맷
 h_disp = h.copy()

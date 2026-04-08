@@ -990,102 +990,94 @@ st.divider()
 # CNY 환전 시뮬레이터
 st.markdown("##### 💱 CNY 환전 시뮬레이터")
 
-# 엑셀에서 CNY 보유 데이터
-cny_rows = [i for i, c in enumerate(holdings_df["통화"].tolist()) if str(c).upper() == "CNY"]
-if cny_rows:
-    sim_cny = float(str(holdings_df.iloc[cny_rows[0]]["보유금액"]).replace(",", ""))
-    sim_book = float(str(holdings_df.iloc[cny_rows[0]]["보유환율"]).replace(",", ""))
-else:
-    sim_cny = 30000000.0
-    sim_book = 198.50
+@st.fragment
+def _run_simulator():
+    """시뮬레이터만 독립 리렌더링 (페이지 전체 리로드 방지)."""
 
-usd_rate = float(latest["USD_KRW"])
-
-# 환전 통화 + 밴드 구간 선택
-sc1, sc2 = st.columns(2)
-with sc1:
-    sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
-with sc2:
-    # 환전 통화에 따라 구간 단위 변경
-    if sim_target == "KRW":
-        # CNY→KRW: 1원 단위
-        step = 1
-        rate_list = list(range(int(cny_lo), int(cny_hi) + 1, step))
-        cur_rate = round(float(latest["CNY_KRW"]))
-        if cur_rate not in rate_list:
-            rate_list.append(cur_rate)
-            rate_list.sort()
-        rate_labels = []
-        for rv in rate_list:
-            if rv == int(cny_lo):
-                rate_labels.append(f"{rv}원 (밴드 하단)")
-            elif rv == int(cny_hi):
-                rate_labels.append(f"{rv}원 (밴드 상단)")
-            elif rv == cur_rate:
-                rate_labels.append(f"{rv}원 (현재 매매기준율)")
-            else:
-                rate_labels.append(f"{rv}원")
-        rate_list_f = [float(x) for x in rate_list]
+    # 엑셀에서 CNY 보유 데이터
+    cny_rows = [i for i, c in enumerate(holdings_df["통화"].tolist()) if str(c).upper() == "CNY"]
+    if cny_rows:
+        sim_cny = float(str(holdings_df.iloc[cny_rows[0]]["보유금액"]).replace(",", ""))
+        sim_book = float(str(holdings_df.iloc[cny_rows[0]]["보유환율"]).replace(",", ""))
     else:
-        # CNY→USD: 0.1원 단위
-        rate_list_f = []
-        r = float(cny_lo)
-        while r <= float(cny_hi) + 0.05:
-            rate_list_f.append(round(r, 1))
-            r += 0.1
-        cur_rate = round(float(latest["CNY_KRW"]), 1)
-        if cur_rate not in rate_list_f:
-            rate_list_f.append(cur_rate)
-            rate_list_f.sort()
-        rate_labels = []
-        for rv in rate_list_f:
-            if rv == float(cny_lo):
-                rate_labels.append(f"{rv:.1f}원 (밴드 하단)")
-            elif rv == float(cny_hi):
-                rate_labels.append(f"{rv:.1f}원 (밴드 상단)")
-            elif rv == cur_rate:
-                rate_labels.append(f"{rv:.1f}원 (현재 매매기준율)")
-            else:
-                rate_labels.append(f"{rv:.1f}원")
+        sim_cny = 30000000.0
+        sim_book = 198.50
 
-    default_idx = next((i for i, lb in enumerate(rate_labels) if "현재" in lb), 0)
-    selected = st.selectbox("적용 환율 선택", rate_labels, index=default_idx)
-    sim_rate = rate_list_f[rate_labels.index(selected)]
+    usd_rate = float(latest["USD_KRW"])
 
-# 계산
-sim_krw = sim_cny * sim_rate
-sim_pnl = sim_cny * (sim_rate - sim_book)
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
+    with sc2:
+        if sim_target == "KRW":
+            rate_list = list(range(int(cny_lo), int(cny_hi) + 1))
+            cur_rate = round(float(latest["CNY_KRW"]))
+            if cur_rate not in rate_list:
+                rate_list.append(cur_rate)
+                rate_list.sort()
+            rate_labels = []
+            for rv in rate_list:
+                if rv == int(cny_lo):
+                    rate_labels.append(f"{rv}원 (밴드 하단)")
+                elif rv == int(cny_hi):
+                    rate_labels.append(f"{rv}원 (밴드 상단)")
+                elif rv == cur_rate:
+                    rate_labels.append(f"{rv}원 (현재 매매기준율)")
+                else:
+                    rate_labels.append(f"{rv}원")
+            rate_list_f = [float(x) for x in rate_list]
+        else:
+            rate_list_f = []
+            r = float(cny_lo)
+            while r <= float(cny_hi) + 0.05:
+                rate_list_f.append(round(r, 1))
+                r += 0.1
+            cur_rate = round(float(latest["CNY_KRW"]), 1)
+            if cur_rate not in rate_list_f:
+                rate_list_f.append(cur_rate)
+                rate_list_f.sort()
+            rate_labels = []
+            for rv in rate_list_f:
+                if rv == float(cny_lo):
+                    rate_labels.append(f"{rv:.1f}원 (밴드 하단)")
+                elif rv == float(cny_hi):
+                    rate_labels.append(f"{rv:.1f}원 (밴드 상단)")
+                elif rv == cur_rate:
+                    rate_labels.append(f"{rv:.1f}원 (현재 매매기준율)")
+                else:
+                    rate_labels.append(f"{rv:.1f}원")
 
-if sim_target == "KRW":
-    converted = sim_krw
-    conv_label = f"{converted:,.0f} 원"
-else:
-    converted = sim_krw / usd_rate
-    conv_label = f"${converted:,.2f}"
+        default_idx = next((i for i, lb in enumerate(rate_labels) if "현재" in lb), 0)
+        selected = st.selectbox("적용 환율 선택", rate_labels, index=default_idx)
+        sim_rate = rate_list_f[rate_labels.index(selected)]
 
-pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
+    sim_krw = sim_cny * sim_rate
+    sim_pnl = sim_cny * (sim_rate - sim_book)
+    conv_label = f"{sim_krw:,.0f} 원" if sim_target == "KRW" else f"${sim_krw / usd_rate:,.2f}"
+    pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
 
-# 결과 카드
-st.markdown(
-    f'<div style="display:flex;gap:12px;margin-top:8px;">'
-    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
-    f'<div style="font-size:0.8rem;color:#888;">보유 CNY</div>'
-    f'<div style="font-size:1.3rem;font-weight:700;">{sim_cny:,.0f}</div>'
-    f'<div style="font-size:0.75rem;color:#888;">장부단가 {sim_book:,.2f}원</div>'
-    f'</div>'
-    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
-    f'<div style="font-size:0.8rem;color:#888;">환전 금액 ({sim_target})</div>'
-    f'<div style="font-size:1.3rem;font-weight:700;">{conv_label}</div>'
-    f'<div style="font-size:0.75rem;color:#888;">적용환율 {sim_rate:,.2f}원</div>'
-    f'</div>'
-    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
-    f'<div style="font-size:0.8rem;color:#888;">외환차손익</div>'
-    f'<div style="font-size:1.3rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>'
-    f'<div style="font-size:0.75rem;color:#888;">({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}</div>'
-    f'</div>'
-    f'</div>',
-    unsafe_allow_html=True,
-)
+    st.markdown(
+        f'<div style="display:flex;gap:12px;margin-top:8px;">'
+        f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+        f'<div style="font-size:0.8rem;color:#888;">보유 CNY</div>'
+        f'<div style="font-size:1.3rem;font-weight:700;">{sim_cny:,.0f}</div>'
+        f'<div style="font-size:0.75rem;color:#888;">장부단가 {sim_book:,.2f}원</div>'
+        f'</div>'
+        f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+        f'<div style="font-size:0.8rem;color:#888;">환전 금액 ({sim_target})</div>'
+        f'<div style="font-size:1.3rem;font-weight:700;">{conv_label}</div>'
+        f'<div style="font-size:0.75rem;color:#888;">적용환율 {sim_rate:,.2f}원</div>'
+        f'</div>'
+        f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+        f'<div style="font-size:0.8rem;color:#888;">외환차손익</div>'
+        f'<div style="font-size:1.3rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>'
+        f'<div style="font-size:0.75rem;color:#888;">({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+_run_simulator()
 
 st.divider()
 

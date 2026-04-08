@@ -956,17 +956,7 @@ st.markdown(f'<div style="text-align:right;font-size:1.1rem;font-weight:700;colo
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 st.markdown(f'<div class="section-header">2. 금주 환율 전망 ({REPORT_WEEK_START[4:6]}/{REPORT_WEEK_START[6:]} ~ {REPORT_WEEK_END[4:6]}/{REPORT_WEEK_END[6:]})</div>', unsafe_allow_html=True)
 
-# 당일 매매기준율 카드
-st.markdown(f"**당일 매매기준율** ({latest_date})")
-r1, r2, r3 = st.columns(3)
-r1.metric("USD/KRW", f"{latest['USD_KRW']:,.2f} 원")
-r2.metric("CNY/KRW", f"{latest['CNY_KRW']:,.2f} 원")
-r3.metric("USD/CNY (재정)", f"{latest['USD_CNY']:.4f}")
-
-st.markdown("")
-
 # 금주 전망 밴드 카드
-st.markdown("**금주 전망 밴드** (출처: 국민은행)")
 fc1, fc2, fc3 = st.columns(3)
 fc1.markdown(_forecast_card("USD / KRW", f"{usd_lo:,} ~ {usd_hi:,} 원", usd_dir), unsafe_allow_html=True)
 fc2.markdown(_forecast_card("CNY / KRW", f"{cny_lo:,} ~ {cny_hi:,} 원", cny_dir), unsafe_allow_html=True)

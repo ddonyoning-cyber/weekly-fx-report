@@ -984,29 +984,46 @@ usd_lo, usd_hi = band["USD/KRW"]
 cny_lo, cny_hi = band["CNY/KRW"]
 cross_lo, cross_hi = band["USD/CNY"]
 
-# ── 3대 통화 전망 카드 ──
-fc1, fc2, fc3 = st.columns(3)
+# ── 방향성: 밴드 중간값 vs 전주 평균 (숫자 기반 확정) ──
+avg_lw = stats["avg_lw"]
 
-usd_info = ca.get("USD_KRW", {})
-cny_info = ca.get("CNY_KRW", {})
-cross_info = ca.get("USD_CNY", {})
+def _decide_dir(band_mid, prev_avg, threshold=0.003):
+    pct = (band_mid - prev_avg) / prev_avg if prev_avg else 0
+    if pct > threshold:
+        return "상승"
+    elif pct < -threshold:
+        return "하락"
+    return "보합"
 
-def _dir_color(direction):
-    if direction == "상승": return "#C00000"
-    if direction == "하락": return "#4A90D9"
+usd_dir = _decide_dir((usd_lo + usd_hi) / 2, avg_lw["USD_KRW"])
+cny_dir = _decide_dir((cny_lo + cny_hi) / 2, avg_lw["CNY_KRW"])
+cross_dir = _decide_dir((cross_lo + cross_hi) / 2, avg_lw["USD_CNY"])
+
+# USD/CNY 서브라벨
+cross_sub = "위안화 절하" if cross_dir == "상승" else ("위안화 절상" if cross_dir == "하락" else "")
+
+def _dir_color(d):
+    if d == "상승": return "#C00000"
+    if d == "하락": return "#4A90D9"
     return "#2E8B57"
 
-def _dir_arrow(direction):
-    if direction == "상승": return "↑"
-    if direction == "하락": return "↓"
+def _dir_arrow(d):
+    if d == "상승": return "↑"
+    if d == "하락": return "↓"
     return "→"
 
+def _dir_bg(d):
+    if d == "상승": return ("#fdf2f2", "#C00000")
+    if d == "하락": return ("#f2f6fd", "#4A90D9")
+    return ("#f2faf5", "#2E8B57")
+
+# ── 3대 통화 전망 카드 ──
 def _forecast_card(label, band_str, direction, sub=""):
     color = _dir_color(direction)
     arrow = _dir_arrow(direction)
     sub_html = f' <span style="font-size:0.8rem;color:#888;">{sub}</span>' if sub else ""
     return (
-        f'<div data-testid="stMetric" style="background:linear-gradient(135deg,#667eea0d,#764ba20d);'
+        f'<div style="background:linear-gradient(135deg,#667eea0d,#764ba20d);'
         f'border:1px solid #ddd;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.03);">'
         f'<div style="font-size:0.85rem;color:#555;font-weight:400;">{label}</div>'
         f'<div style="font-size:2rem;font-weight:700;color:#1a1a1a;margin:4px 0;">{band_str}</div>'
@@ -1014,36 +1031,33 @@ def _forecast_card(label, band_str, direction, sub=""):
         f'</div>'
     )
 
-fc1.markdown(_forecast_card("USD / KRW (금주 전망)", f"{usd_lo:,} ~ {usd_hi:,} 원",
-             usd_info.get("direction", "보합")), unsafe_allow_html=True)
-fc2.markdown(_forecast_card("CNY / KRW (금주 전망)", f"{cny_lo:,} ~ {cny_hi:,} 원",
-             cny_info.get("direction", "보합")), unsafe_allow_html=True)
-fc3.markdown(_forecast_card("USD / CNY 재정 (금주 전망)", f"{cross_lo} ~ {cross_hi}",
-             cross_info.get("direction", "보합"), cross_info.get("sub_label", "")), unsafe_allow_html=True)
+fc1, fc2, fc3 = st.columns(3)
+fc1.markdown(_forecast_card("USD / KRW (금주 전망)", f"{usd_lo:,} ~ {usd_hi:,} 원", usd_dir), unsafe_allow_html=True)
+fc2.markdown(_forecast_card("CNY / KRW (금주 전망)", f"{cny_lo:,} ~ {cny_hi:,} 원", cny_dir), unsafe_allow_html=True)
+fc3.markdown(_forecast_card("USD / CNY 재정 (금주 전망)", f"{cross_lo} ~ {cross_hi}", cross_dir, cross_sub), unsafe_allow_html=True)
 
 st.caption("출처: 국민은행 주간 외환 전망 (CNY/KRW는 USD/KRW ÷ USD/CNY 역산)")
 
 st.divider()
 
-# ── 통화별 전망 분석 (3자 자료 종합) ──
+# ── 통화별 전망 분석 (색상 카드 방향과 연동) ──
 st.markdown("##### 📝 통화별 분석")
 st.caption("신한은행 · 국민은행 PDF + 서울파이낸셜 [주간환율전망] 종합")
 
 # USD/KRW
+usd_bg, usd_bc = _dir_bg(usd_dir)
 st.markdown(
     f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:#fdf2f2;border-radius:8px;border-left:4px solid #C00000;">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:#C00000;margin-bottom:6px;">'
-    f'▲ USD/KRW — {usd_lo:,}~{usd_hi:,}원</div>'
+    f'<div style="padding:12px 16px;background:{usd_bg};border-radius:8px;border-left:4px solid {usd_bc};">'
+    f'<div style="font-size:0.95rem;font-weight:800;color:{usd_bc};margin-bottom:6px;">'
+    f'{_dir_arrow(usd_dir)} USD/KRW — {usd_lo:,}~{usd_hi:,}원</div>'
     f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
-    # 변동 요인
     f'<b>변동 요인:</b> '
     f'<b>이란 전쟁 불확실성</b>과 <b>국제유가 고공행진</b>(호르무즈 해협 통항 리스크)이 '
     f'달러 매수 심리를 자극하는 가운데, <b>4월 외국인 배당 역송금</b> 수요가 본격화되며 '
     f'실수급 측면에서도 상방 압력이 가중되고 있음. '
     f'지난주 환율은 <b>1,497~1,536원</b> 범위에서 등락하며 상방 쏠림이 우세했음.'
     f'<br>'
-    # 금주 전망
     f'<b>금주 전망:</b> '
     f'목요일(<b>4/10</b>) <b>미국 3월 CPI</b>에서 고유가가 물가에 반영될 경우, '
     f'연준 금리인하 기대 후퇴 → 달러 강세 → 상단 <b>{usd_hi:,}원</b> 테스트 가능성 높음. '
@@ -1055,11 +1069,12 @@ st.markdown(
 )
 
 # CNY/KRW
+cny_bg, cny_bc = _dir_bg(cny_dir)
 st.markdown(
     f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:#f2f6fd;border-radius:8px;border-left:4px solid #2E75B6;">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:#2E75B6;margin-bottom:6px;">'
-    f'▼ CNY/KRW — {cny_lo:,}~{cny_hi:,}원</div>'
+    f'<div style="padding:12px 16px;background:{cny_bg};border-radius:8px;border-left:4px solid {cny_bc};">'
+    f'<div style="font-size:0.95rem;font-weight:800;color:{cny_bc};margin-bottom:6px;">'
+    f'{_dir_arrow(cny_dir)} CNY/KRW — {cny_lo:,}~{cny_hi:,}원</div>'
     f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
     f'<b>변동 요인:</b> '
     f'위안화 프록시 통화인 원화가 달러 강세에 동반 약세를 보이는 가운데, '
@@ -1076,11 +1091,12 @@ st.markdown(
 )
 
 # USD/CNY
+cross_bg, cross_bc = _dir_bg(cross_dir)
 st.markdown(
     f'<div style="margin-bottom:16px;">'
-    f'<div style="padding:12px 16px;background:#f5f8f2;border-radius:8px;border-left:4px solid #548235;">'
-    f'<div style="font-size:0.95rem;font-weight:800;color:#548235;margin-bottom:6px;">'
-    f'→ USD/CNY (재정) — {cross_lo}~{cross_hi}</div>'
+    f'<div style="padding:12px 16px;background:{cross_bg};border-radius:8px;border-left:4px solid {cross_bc};">'
+    f'<div style="font-size:0.95rem;font-weight:800;color:{cross_bc};margin-bottom:6px;">'
+    f'{_dir_arrow(cross_dir)} USD/CNY (재정) — {cross_lo}~{cross_hi}</div>'
     f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
     f'<b>변동 요인:</b> '
     f'달러 강세 기조에도 <b>인민은행(PBOC)</b>이 기준환율 고시를 통해 위안화 급락을 방어하며 '

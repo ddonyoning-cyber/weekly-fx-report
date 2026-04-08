@@ -999,41 +999,53 @@ else:
     sim_cny = 30000000.0
     sim_book = 198.50
 
-st.caption(f"보유 CNY: **{sim_cny:,.0f}** · 장부단가: **{sim_book:,.2f}원**")
-
-# 시나리오별 환전 결과 표
 usd_rate = float(latest["USD_KRW"])
-scenarios = [
-    ("밴드 하단", float(cny_lo)),
-    ("현재 매매기준율", float(latest["CNY_KRW"])),
-    ("밴드 상단", float(cny_hi)),
-]
 
-rows_html = ""
-for label, rate in scenarios:
-    krw_val = sim_cny * rate
-    pnl_krw = sim_cny * (rate - sim_book)
-    usd_val = krw_val / usd_rate
-    pnl_color = "#C00000" if pnl_krw > 0 else "#4A90D9"
-    rows_html += (
-        f'<tr>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">{label}</td>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:600;">{rate:,.2f}원</td>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">{krw_val:,.0f}원</td>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">${usd_val:,.2f}</td>'
-        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:700;color:{pnl_color};">{pnl_krw:+,.0f}원</td>'
-        f'</tr>'
-    )
+# 환전 통화 + 밴드 구간 선택
+sc1, sc2 = st.columns(2)
+with sc1:
+    sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
+with sc2:
+    rate_options = {
+        f"밴드 하단 ({cny_lo}원)": float(cny_lo),
+        f"현재 매매기준율 ({latest['CNY_KRW']:.2f}원)": float(latest["CNY_KRW"]),
+        f"밴드 상단 ({cny_hi}원)": float(cny_hi),
+    }
+    selected = st.selectbox("적용 환율 (밴드 구간 선택)", list(rate_options.keys()))
+    sim_rate = rate_options[selected]
 
+# 계산
+sim_krw = sim_cny * sim_rate
+sim_pnl = sim_cny * (sim_rate - sim_book)
+
+if sim_target == "KRW":
+    converted = sim_krw
+    conv_label = f"{converted:,.0f} 원"
+else:
+    converted = sim_krw / usd_rate
+    conv_label = f"${converted:,.2f}"
+
+pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
+
+# 결과 카드
 st.markdown(
-    f'<table style="width:100%;border-collapse:collapse;font-size:0.88rem;">'
-    f'<tr style="background:#f0f4ff;">'
-    f'<th style="padding:8px 10px;text-align:left;">시나리오</th>'
-    f'<th style="padding:8px 10px;text-align:left;">적용환율</th>'
-    f'<th style="padding:8px 10px;text-align:left;">CNY→KRW</th>'
-    f'<th style="padding:8px 10px;text-align:left;">CNY→USD</th>'
-    f'<th style="padding:8px 10px;text-align:left;">외환차손익</th>'
-    f'</tr>{rows_html}</table>',
+    f'<div style="display:flex;gap:12px;margin-top:8px;">'
+    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+    f'<div style="font-size:0.8rem;color:#888;">보유 CNY</div>'
+    f'<div style="font-size:1.3rem;font-weight:700;">{sim_cny:,.0f}</div>'
+    f'<div style="font-size:0.75rem;color:#888;">장부단가 {sim_book:,.2f}원</div>'
+    f'</div>'
+    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+    f'<div style="font-size:0.8rem;color:#888;">환전 금액 ({sim_target})</div>'
+    f'<div style="font-size:1.3rem;font-weight:700;">{conv_label}</div>'
+    f'<div style="font-size:0.75rem;color:#888;">적용환율 {sim_rate:,.2f}원</div>'
+    f'</div>'
+    f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
+    f'<div style="font-size:0.8rem;color:#888;">외환차손익</div>'
+    f'<div style="font-size:1.3rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>'
+    f'<div style="font-size:0.75rem;color:#888;">({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}</div>'
+    f'</div>'
+    f'</div>',
     unsafe_allow_html=True,
 )
 

@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
-pd.options.mode.dtype_backend = "numpy_nullable"
+try:
+    pd.set_option("mode.dtype_backend", "numpy_nullable")
+except Exception:
+    pass
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
@@ -924,8 +927,8 @@ st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매
 
 rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
 h = holdings_df.copy()
-amt = [float(x) for x in h["보유금액"].tolist()]
-book = [float(x) for x in h["보유환율"].tolist()]
+amt = [float(str(x).replace(",", "")) for x in h["보유금액"].tolist()]
+book = [float(str(x).replace(",", "")) for x in h["보유환율"].tolist()]
 mkt = [float(rate_map.get(c, 0)) for c in h["통화"].tolist()]
 pnl = [(m - b) * a for m, b, a in zip(mkt, book, amt)]
 h["보유금액"] = amt

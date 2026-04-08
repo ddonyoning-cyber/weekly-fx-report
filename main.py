@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+pd.options.mode.dtype_backend = "numpy_nullable"
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests

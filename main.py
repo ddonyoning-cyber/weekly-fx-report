@@ -990,7 +990,7 @@ st.divider()
 # CNY 환전 시뮬레이터
 st.markdown("##### 💱 CNY 환전 시뮬레이터")
 
-# 엑셀에서 CNY 보유 데이터 가져오기
+# 엑셀에서 CNY 보유 데이터
 cny_rows = [i for i, c in enumerate(holdings_df["통화"].tolist()) if str(c).upper() == "CNY"]
 if cny_rows:
     sim_cny = float(str(holdings_df.iloc[cny_rows[0]]["보유금액"]).replace(",", ""))
@@ -999,33 +999,43 @@ else:
     sim_cny = 30000000.0
     sim_book = 198.50
 
-# 적용환율 선택지 구성
-rate_options = {
-    f"밴드 하단 ({cny_lo}원)": float(cny_lo),
-    f"현재 매매기준율 ({latest['CNY_KRW']:.2f}원)": float(latest["CNY_KRW"]),
-    f"밴드 상단 ({cny_hi}원)": float(cny_hi),
-}
+st.caption(f"보유 CNY: **{sim_cny:,.0f}** · 장부단가: **{sim_book:,.2f}원**")
 
-sim_c1, sim_c2 = st.columns(2)
-with sim_c1:
-    st.markdown(f"**보유 CNY:** {sim_cny:,.0f}")
-    st.markdown(f"**보유환율 (장부단가):** {sim_book:,.2f}원")
-with sim_c2:
-    selected = st.selectbox("적용 환율 선택", list(rate_options.keys()))
-    sim_rate = rate_options[selected]
+# 시나리오별 환전 결과 표
+usd_rate = float(latest["USD_KRW"])
+scenarios = [
+    ("밴드 하단", float(cny_lo)),
+    ("현재 매매기준율", float(latest["CNY_KRW"])),
+    ("밴드 상단", float(cny_hi)),
+]
 
-sim_krw = sim_cny * sim_rate
-sim_pnl = sim_cny * (sim_rate - sim_book)
-sim_usd = sim_krw / float(latest["USD_KRW"])
+rows_html = ""
+for label, rate in scenarios:
+    krw_val = sim_cny * rate
+    pnl_krw = sim_cny * (rate - sim_book)
+    usd_val = krw_val / usd_rate
+    pnl_color = "#C00000" if pnl_krw > 0 else "#4A90D9"
+    rows_html += (
+        f'<tr>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">{label}</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:600;">{rate:,.2f}원</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">{krw_val:,.0f}원</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;">${usd_val:,.2f}</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #eee;font-weight:700;color:{pnl_color};">{pnl_krw:+,.0f}원</td>'
+        f'</tr>'
+    )
 
-sc1, sc2, sc3 = st.columns(3)
-sc1.metric("환전 금액 (KRW)", f"{sim_krw:,.0f} 원")
-pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
-sc2.markdown(
-    f'<div style="font-size:0.85rem;color:#555;">외환차손익</div>'
-    f'<div style="font-size:1.5rem;font-weight:700;color:{pnl_color};">{sim_pnl:+,.0f} 원</div>',
-    unsafe_allow_html=True)
-sc3.metric("USD 환산", f"${sim_usd:,.2f}")
+st.markdown(
+    f'<table style="width:100%;border-collapse:collapse;font-size:0.88rem;">'
+    f'<tr style="background:#f0f4ff;">'
+    f'<th style="padding:8px 10px;text-align:left;">시나리오</th>'
+    f'<th style="padding:8px 10px;text-align:left;">적용환율</th>'
+    f'<th style="padding:8px 10px;text-align:left;">CNY→KRW</th>'
+    f'<th style="padding:8px 10px;text-align:left;">CNY→USD</th>'
+    f'<th style="padding:8px 10px;text-align:left;">외환차손익</th>'
+    f'</tr>{rows_html}</table>',
+    unsafe_allow_html=True,
+)
 
 st.divider()
 

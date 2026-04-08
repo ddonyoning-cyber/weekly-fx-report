@@ -1006,32 +1006,51 @@ sc1, sc2 = st.columns(2)
 with sc1:
     sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
 with sc2:
-    # 밴드 하단~상단 0.1 단위 리스트
-    rate_list = []
-    r = float(cny_lo)
-    while r <= float(cny_hi) + 0.05:
-        rate_list.append(round(r, 1))
-        r += 0.1
-    # 현재 매매기준율도 포함 (중복 방지)
-    cur_rate = round(float(latest["CNY_KRW"]), 1)
-    if cur_rate not in rate_list:
-        rate_list.append(cur_rate)
-        rate_list.sort()
-    # 라벨 생성
-    rate_labels = []
-    for rv in rate_list:
-        if rv == float(cny_lo):
-            rate_labels.append(f"{rv:.1f}원 (밴드 하단)")
-        elif rv == float(cny_hi):
-            rate_labels.append(f"{rv:.1f}원 (밴드 상단)")
-        elif rv == cur_rate:
-            rate_labels.append(f"{rv:.1f}원 (현재 매매기준율)")
-        else:
-            rate_labels.append(f"{rv:.1f}원")
-    # 기본값: 현재 매매기준율
-    default_idx = rate_list.index(cur_rate) if cur_rate in rate_list else 0
+    # 환전 통화에 따라 구간 단위 변경
+    if sim_target == "KRW":
+        # CNY→KRW: 1원 단위
+        step = 1
+        rate_list = list(range(int(cny_lo), int(cny_hi) + 1, step))
+        cur_rate = round(float(latest["CNY_KRW"]))
+        if cur_rate not in rate_list:
+            rate_list.append(cur_rate)
+            rate_list.sort()
+        rate_labels = []
+        for rv in rate_list:
+            if rv == int(cny_lo):
+                rate_labels.append(f"{rv}원 (밴드 하단)")
+            elif rv == int(cny_hi):
+                rate_labels.append(f"{rv}원 (밴드 상단)")
+            elif rv == cur_rate:
+                rate_labels.append(f"{rv}원 (현재 매매기준율)")
+            else:
+                rate_labels.append(f"{rv}원")
+        rate_list_f = [float(x) for x in rate_list]
+    else:
+        # CNY→USD: 0.1원 단위
+        rate_list_f = []
+        r = float(cny_lo)
+        while r <= float(cny_hi) + 0.05:
+            rate_list_f.append(round(r, 1))
+            r += 0.1
+        cur_rate = round(float(latest["CNY_KRW"]), 1)
+        if cur_rate not in rate_list_f:
+            rate_list_f.append(cur_rate)
+            rate_list_f.sort()
+        rate_labels = []
+        for rv in rate_list_f:
+            if rv == float(cny_lo):
+                rate_labels.append(f"{rv:.1f}원 (밴드 하단)")
+            elif rv == float(cny_hi):
+                rate_labels.append(f"{rv:.1f}원 (밴드 상단)")
+            elif rv == cur_rate:
+                rate_labels.append(f"{rv:.1f}원 (현재 매매기준율)")
+            else:
+                rate_labels.append(f"{rv:.1f}원")
+
+    default_idx = next((i for i, lb in enumerate(rate_labels) if "현재" in lb), 0)
     selected = st.selectbox("적용 환율 선택", rate_labels, index=default_idx)
-    sim_rate = rate_list[rate_labels.index(selected)]
+    sim_rate = rate_list_f[rate_labels.index(selected)]
 
 # 계산
 sim_krw = sim_cny * sim_rate

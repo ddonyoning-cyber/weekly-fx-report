@@ -35,6 +35,7 @@ div[data-testid="stMetric"] {
     padding: 16px 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);
 }
 div[data-testid="stMetric"] label { font-size:.85rem!important; color:#555!important; }
+div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-weight:700!important; }
 .section-header {
     background: linear-gradient(90deg, #2E75B6, #4a90d9);
     color: white; padding: 10px 20px; border-radius: 8px;

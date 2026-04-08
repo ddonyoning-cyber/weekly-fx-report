@@ -542,43 +542,43 @@ def run_integrated_analysis(folder: str) -> dict:
     # ── 통화별 심층 분석 (PDF 정독 기반) ──
     currency_kw = {
         "USD_KRW": {
-            "detect": ["달러", "USD", "원/달러", "달러원", "원달러", "미국"],
-            "bull": ["달러 강세", "USD 상승", "달러원 상승", "원화 약세", "원/달러 상승"],
-            "bear": ["달러 약세", "USD 하락", "달러원 하락", "원화 강세", "원/달러 하락"],
+            "detect": ["달러", "USD", "원/달러", "달러원", "원달러"],
+            # 환율 상승(원화 약세) = bull
+            "bull": ["상방", "상방우세", "상방압력", "상단", "환율상승", "원화약세", "원화절하",
+                     "달러강세", "상승압력", "쏠림", "상회"],
+            # 환율 하락(원화 강세) = bear
+            "bear": ["하방", "하방우세", "하방압력", "하단", "환율하락", "원화강세", "원화절상",
+                     "달러약세", "하락압력", "하회"],
         },
         "CNY_KRW": {
-            "detect": ["위안", "CNY", "원/위안", "위안화", "중국"],
-            "bull": ["위안 강세", "위안화 강세", "CNY 상승", "원/위안 상승"],
-            "bear": ["위안 약세", "위안화 약세", "CNY 하락", "원/위안 하락", "위안화 절하"],
+            "detect": ["위안", "CNY", "원/위안", "위안화"],
+            "bull": ["위안강세", "위안화강세", "위안화반등", "위안화절상"],
+            "bear": ["위안약세", "위안화약세", "위안화절하", "위안화하락", "내수둔화", "내수부진"],
         },
         "USD_CNY": {
-            "detect": ["재정환율", "USD/CNY", "달러/위안"],
-            "bull": ["재정환율 상승", "USD/CNY 상승", "위안 절하"],
-            "bear": ["재정환율 하락", "USD/CNY 하락", "위안 절상"],
+            "detect": ["재정환율", "USD/CNY", "달러/위안", "달러위안"],
+            "bull": ["위안절하", "위안약세", "달러강세"],
+            "bear": ["위안절상", "위안강세", "달러약세", "안정적관리", "안정적흐름"],
         },
     }
 
     currency_analysis = {}
     for cur_key, kws in currency_kw.items():
-        # 해당 통화 관련 문장 수집
         related = [s for s in all_sentences if any(kw in s for kw in kws["detect"])]
 
-        # 방향성 판단
-        bull_score = sum(sum(1 for kw in kws["bull"] if kw in s) for s in related)
-        bear_score = sum(sum(1 for kw in kws["bear"] if kw in s) for s in related)
-        # 일반 방향 키워드도 가산
-        for s in related:
-            bull_score += sum(1 for kw in direction_kw["상승"] if kw in s)
-            bear_score += sum(1 for kw in direction_kw["하락"] if kw in s)
+        # 환율 전용 키워드로 방향성 판단 (띄어쓰기 무시)
+        related_joined = " ".join(related).replace(" ", "")
+        bull_score = sum(1 for kw in kws["bull"] if kw.replace(" ", "") in related_joined)
+        bear_score = sum(1 for kw in kws["bear"] if kw.replace(" ", "") in related_joined)
 
-        if bull_score > bear_score * 1.2:
+        if bull_score > bear_score:
             direction = "상승"
-            arrow = "▲"
+            arrow = "↑"
             color = "#C00000"
-        elif bear_score > bull_score * 1.2:
+        elif bear_score > bull_score:
             direction = "하락"
-            arrow = "▼"
-            color = "#2E75B6"
+            arrow = "↓"
+            color = "#4A90D9"
         else:
             direction = "보합"
             arrow = "→"

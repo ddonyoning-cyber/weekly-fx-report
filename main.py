@@ -1325,35 +1325,39 @@ if prev_forecast and not lw_data.empty:
         else:
             result = "✅ 범위 내"
 
-        # 전주 PDF 키워드 기반 원인 분석
-        def _pc(kw): return kw in prev_all_text
+        # 전주 PDF 원문에서 해당 통화 관련 핵심 문장 추출 → 짧게 정리
+        detect_map = {
+            "USD/KRW": ["달러", "USD", "원/달러", "환율", "원달러"],
+            "CNY/KRW": ["위안", "CNY", "중국", "원/위안"],
+            "USD/CNY": ["재정", "USD/CNY", "달러/위안", "PBOC", "당국"],
+        }
+        factor_kws = ["전망", "예상", "상방", "하방", "우세", "압력", "자극", "제한",
+                      "리스크", "유가", "개입", "요인", "불확실", "약세", "강세",
+                      "상승", "하락", "둔화", "확전", "장기화", "안정"]
+        prev_sents = [s.strip() for s in prev_all_text.replace("\n", " ").split(".")
+                      if len(s.strip()) > 20]
 
-        causes = []
-        if cur == "USD/KRW":
-            if _pc("전쟁") or _pc("이란") or _pc("중동"):
-                causes.append("<b>이란 전쟁</b> 불확실성 → 위험회피 심리 → 달러 매수 자극")
-            if _pc("유가"):
-                causes.append("<b>국제유가</b> 고공행진 → 경상수지 악화 우려 → 원화 약세 압력")
-            if _pc("CPI") or _pc("물가"):
-                causes.append("미 CPI 고유가 반영 → <b>금리인하 기대 후퇴</b>")
-            if _pc("금통위") or _pc("한국은행"):
-                causes.append("한은 <b>금통위</b> 당국 경계 발언 → 상단 제한 변수")
-            if _pc("종전") or _pc("휴전"):
-                causes.append("<b>종전 기대감</b> → 위험선호 회복 → 원화 강세 요인")
-        elif cur == "CNY/KRW":
-            if _pc("내수") or _pc("둔화") or _pc("부진"):
-                causes.append("중국 <b>내수 둔화</b> → 위안화 약세 → 원/위안 하방 압력")
-            if _pc("관세") or _pc("무역"):
-                causes.append("<b>미중 관세</b> 리스크 → 위안화 절하 압력")
-            if _pc("유가") or _pc("안전자산"):
-                causes.append("<b>고유가</b> → 안전자산 선호 → 위안화 프록시 원화 동반 약세")
-        elif cur == "USD/CNY":
-            if _pc("둔감") or _pc("안정"):
-                causes.append("지정학적 이벤트에 <b>둔감</b>, PBOC 안정적 관리 기조 유지")
-            if _pc("PBOC") or _pc("당국") or _pc("고시"):
-                causes.append("<b>PBOC</b> 기준환율 고시 → 위안화 급락 방어 의지")
+        related = []
+        for s in prev_sents:
+            if not any(dk in s for dk in detect_map.get(cur, [])):
+                continue
+            if not any(fk in s for fk in factor_kws):
+                continue
+            # 깨진 텍스트 필터
+            import re as _re
+            clean_ratio = len(_re.findall(r'[가-힣a-zA-Z0-9\s,.%()~·\-/]', s)) / max(len(s), 1)
+            if clean_ratio < 0.7:
+                continue
+            # 40자로 요약
+            short = s.strip()
+            if len(short) > 45:
+                short = short[:45] + "…"
+            if short not in related:
+                related.append(short)
+            if len(related) >= 3:
+                break
 
-        cause = "<br>".join(f"• {c}" for c in causes) if causes else "• 변동 요인 미감지"
+        cause = "<br>".join(f"• {r}" for r in related) if related else "• 변동 요인 추출 불가"
 
         if fmt == "cross":
             fc_str = f"{f_lo}~{f_hi}"

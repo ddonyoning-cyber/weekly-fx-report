@@ -84,6 +84,10 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-weight:700!impo
     font-size: 0.9rem; line-height: 1.7;
 }
 hr { border-color: #e8e8e8 !important; }
+/* 슬라이더·라디오·셀렉트박스 강조색 남색 */
+div[data-testid="stSlider"] [role="slider"] { background: #2E75B6 !important; }
+div[data-testid="stSlider"] [data-testid="stThumbValue"] { color: #2E75B6 !important; }
+div[role="radiogroup"] label[data-checked="true"] { background: #2E75B6 !important; color: white !important; border-color: #2E75B6 !important; }
 </style>
 """, unsafe_allow_html=True)
 

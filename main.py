@@ -1111,7 +1111,6 @@ avg_lw = stats["avg_lw"]
 def _outlook_cell(direction, band_lo, band_hi, prev_avg, fmt="krw"):
     mid = (band_lo + band_hi) / 2
     diff = mid - prev_avg
-    pct = diff / prev_avg * 100 if prev_avg else 0
     color = _dir_color(direction)
     arrow = _dir_arrow(direction)
     if fmt == "krw":
@@ -1120,7 +1119,7 @@ def _outlook_cell(direction, band_lo, band_hi, prev_avg, fmt="krw"):
         diff_str = f"{diff:+.4f}"
     return (
         f'{arrow} <b>{direction}</b><br>'
-        f'<span style="font-size:0.8rem;color:{color};">{diff_str} ({pct:+.2f}%)</span>'
+        f'<span style="font-size:0.78rem;color:#888;">중간값 기준 전주 대비 {diff_str}</span>'
     )
 
 usd_outlook = _outlook_cell(usd_dir, usd_lo, usd_hi, avg_lw["USD_KRW"])

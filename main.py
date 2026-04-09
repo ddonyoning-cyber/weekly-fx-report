@@ -1050,57 +1050,103 @@ def _analysis_table(title, band_str, direction, up_list, dn_list, conclusion):
         f'</table></div>'
     )
 
+# 키워드 → 인과관계 문장 매핑
+_up_phrases = {
+    "리스크": "지정학적 리스크 확대 → 안전자산 선호 → 달러 매수 심리 자극",
+    "유가": "국제유가 고공행진 → 경상수지 악화 우려 → 원화 약세 압력",
+    "인플레": "CPI 고유가 반영 시 → 금리인하 기대 후퇴 → 달러 강세",
+    "지정학": "중동 확전 리스크 → 위험회피 심리 → 환율 상방 자극",
+    "관세": "미중 관세 리스크 재부각 → 글로벌 교역 위축 우려",
+    "트럼프": "트럼프 대외정책 불확실성 → 시장 변동성 확대",
+    "매파": "연준 매파 기조 유지 → 달러 인덱스 상승",
+    "강세": "달러 강세 기조 지속 → 원화 절하 압력",
+    "FOMC": "FOMC 금리 동결 기조 → 달러 강세 유지",
+}
+_dn_phrases = {
+    "완화": "종전 기대감 부각 시 → 위험선호 회복 → 원화 강세 전환",
+    "수출": "수출업체 고점 네고 매도세 유입 → 환율 상단 제한",
+    "둔화": "미국 경기 둔화 시그널 → 금리인하 기대 → 달러 약세",
+    "순매수": "외국인 주식 순매수 유입 → 원화 수요 증가",
+    "유입": "WGBI 편입 기대 → 채권자금 유입 → 원화 강세 요인",
+    "비둘기": "연준 비둘기파 시그널 → 달러 약세 전환",
+    "절상": "위안화 절상 → 원화 동반 강세",
+    "회복": "경기 회복 기대 → 위험자산 선호 → 원화 강세",
+}
+
+def _vars_to_causal(vars_list, phrase_map, fallback):
+    result = []
+    for v in vars_list[:3]:
+        result.append(phrase_map.get(v, f"{v} 영향"))
+    return result if result else [fallback]
+
 # USD/KRW
 usd_up_v = ca.get("USD_KRW", {}).get("upside_vars", [])
 usd_dn_v = ca.get("USD_KRW", {}).get("downside_vars", [])
-usd_up = [f"{v} 이슈로 상방 압력" for v in usd_up_v[:3]] or ["대외 불확실성 확대"]
-usd_dn = [f"{v} 기대로 하방 지지" for v in usd_dn_v[:3]] or ["당국 개입 리스크"]
+usd_up = _vars_to_causal(usd_up_v, _up_phrases, "대외 불확실성 확대 → 달러 매수 심리")
+usd_dn = _vars_to_causal(usd_dn_v, _dn_phrases, "외환당국 개입 경계 → 상단 제한")
 
-uc = len(usd_up_v)
-dc = len(usd_dn_v)
+uc, dc = len(usd_up_v), len(usd_dn_v)
 if usd_dir == "상승":
-    usd_concl = f"상방({uc}건) > 하방({dc}건), {usd_lo:,}~{usd_hi:,}원 상방 쏠림 전망"
+    usd_concl = f"상방 요인({uc}건)이 하방({dc}건)보다 우세 → {usd_lo:,}~{usd_hi:,}원 상방 쏠림 전망"
 elif usd_dir == "하락":
-    usd_concl = f"하방({dc}건) > 상방({uc}건), {usd_lo:,}원 하단 테스트 가능"
+    usd_concl = f"하방 요인({dc}건)이 우세 → {usd_lo:,}원 하단 테스트 가능"
 else:
-    usd_concl = f"상방·하방 균형, {usd_lo:,}~{usd_hi:,}원 박스권 보합"
-
+    usd_concl = f"상방·하방 균형 → {usd_lo:,}~{usd_hi:,}원 박스권 보합"
 st.markdown(_analysis_table("USD/KRW", f"{usd_lo:,}~{usd_hi:,}원", usd_dir,
             usd_up, usd_dn, usd_concl), unsafe_allow_html=True)
 
 # CNY/KRW
 cny_up_v = ca.get("CNY_KRW", {}).get("upside_vars", [])
 cny_dn_v = ca.get("CNY_KRW", {}).get("downside_vars", [])
-cny_up = [f"{v} 기대로 상방 시도" for v in cny_up_v[:3]] or ["위안화 반등 기대"]
-cny_dn = [f"{v} 우려로 하방 압력" for v in cny_dn_v[:3]] or ["내수 둔화 · 원화 동반 약세"]
+_cny_up_map = {
+    "회복": "중국 경기 회복 기대 → 위안화 반등 → CNY/KRW 상승",
+    "완화": "미중 갈등 완화 → 위안화 강세 → 원/위안 상승",
+    "절상": "PBOC 위안화 절상 용인 → CNY/KRW 상방",
+    "수출": "중국 수출 호조 → 위안화 강세 → 원/위안 상승",
+}
+_cny_dn_map = {
+    "둔화": "중국 내수 둔화 → 위안화 약세 → CNY/KRW 하방 압력",
+    "리스크": "미중 관세 리스크 → 위안화 절하 → 원/위안 하락",
+    "강세": "달러 강세 → 위안화 프록시 원화 동반 약세",
+    "관세": "미중 관세 확대 → 위안화 절하 압력 → CNY/KRW 하락",
+    "유가": "유가 상승 → 안전자산 선호 → 위안화 약세 동조",
+}
+cny_up = _vars_to_causal(cny_up_v, _cny_up_map, "위안화 반등 기대 → CNY/KRW 상승 시도")
+cny_dn = _vars_to_causal(cny_dn_v, _cny_dn_map, "중국 내수 둔화 → 위안화 약세 → 원/위안 하락")
 
-cc_u = len(cny_up_v)
-cc_d = len(cny_dn_v)
+cu, cd = len(cny_up_v), len(cny_dn_v)
 if cny_dir == "하락":
-    cny_concl = f"하방({cc_d}건) > 상방({cc_u}건), {cny_lo:,}원 하단 지지 관건"
+    cny_concl = f"하방 요인({cd}건)이 우세 → {cny_lo:,}원 하단 지지 여부 관건"
 elif cny_dir == "상승":
-    cny_concl = f"상방({cc_u}건) > 하방({cc_d}건), {cny_hi:,}원 회복 시도"
+    cny_concl = f"상방 요인({cu}건)이 우세 → {cny_hi:,}원 회복 시도"
 else:
-    cny_concl = f"방향성 혼조, {cny_lo:,}~{cny_hi:,}원 박스권"
-
+    cny_concl = f"방향성 혼조 → {cny_lo:,}~{cny_hi:,}원 박스권"
 st.markdown(_analysis_table("CNY/KRW", f"{cny_lo:,}~{cny_hi:,}원", cny_dir,
             cny_up, cny_dn, cny_concl), unsafe_allow_html=True)
 
 # USD/CNY
 x_up_v = ca.get("USD_CNY", {}).get("upside_vars", [])
 x_dn_v = ca.get("USD_CNY", {}).get("downside_vars", [])
-x_up = [f"{v} 압력" for v in x_up_v[:3]] or ["달러 강세 → 위안 절하"]
-x_dn = [f"{v} 방어" for v in x_dn_v[:3]] or ["PBOC 안정적 관리"]
+_x_up_map = {
+    "강세": "달러 인덱스 강세 → 위안화 절하 → 재정환율 상승",
+    "인플레": "미국 물가 상승 → 금리인하 지연 → 달러/위안 상승",
+    "리스크": "지정학적 리스크 → 달러 선호 → 위안 절하 압력",
+}
+_x_dn_map = {
+    "둔감": "지정학 이벤트에 둔감 → PBOC 관리로 안정적 흐름",
+    "회복": "글로벌 경기 회복 → 위안화 절상 → 재정환율 하락",
+    "완화": "미중 갈등 완화 → 위안화 강세 → USD/CNY 하락",
+}
+x_up = _vars_to_causal(x_up_v, _x_up_map, "달러 강세 지속 → 위안화 절하 압력")
+x_dn = _vars_to_causal(x_dn_v, _x_dn_map, "PBOC 기준환율 관리 → 변동폭 제한")
 
-xc_u = len(x_up_v)
-xc_d = len(x_dn_v)
+xu, xd = len(x_up_v), len(x_dn_v)
 if cross_dir == "하락":
-    x_concl = f"하방({xc_d}건) > 상방({xc_u}건), PBOC 방어로 {cross_lo}~{cross_hi} 안정"
+    x_concl = f"PBOC 방어({xd}건)가 우세 → {cross_lo}~{cross_hi} 안정적 흐름"
 elif cross_dir == "상승":
-    x_concl = f"상방({xc_u}건) > 하방({xc_d}건), {cross_hi} 상단 제한적 상승"
+    x_concl = f"달러 강세({xu}건)가 우세하나, PBOC 방어로 {cross_hi} 상단 제한"
 else:
-    x_concl = f"PBOC 방어 vs 달러 강세 균형, {cross_lo}~{cross_hi} 보합"
-
+    x_concl = f"PBOC 방어 vs 달러 강세 균형 → {cross_lo}~{cross_hi} 보합"
 st.markdown(_analysis_table("USD/CNY (재정)", f"{cross_lo}~{cross_hi}", cross_dir,
             x_up, x_dn, x_concl), unsafe_allow_html=True)
 

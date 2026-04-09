@@ -1027,72 +1027,77 @@ def _dir_badge(d):
     a = _dir_arrow(d)
     return f'<span style="color:{c};font-weight:700;">{a} {d}</span>'
 
-# PDF 문장에서 통화별 핵심 변동요인 추출 (방향에 맞는 것만)
+# PDF 키워드 기반 변동요인 요약 생성
 all_s = report.get("all_sentences", [])
+all_text = " ".join(all_s)
 
-def _extract_factors(detect_kws, direction_kws, max_n=3):
-    """PDF 문장에서 해당 통화+방향 키워드가 포함된 문장을 짧게 요약."""
-    results = []
-    for s in all_s:
-        if len(s) < 20:
-            continue
-        if not any(dk in s for dk in detect_kws):
-            continue
-        if not any(fk in s for fk in direction_kws):
-            continue
-        # 40자로 자르고 정리
-        clean = s.strip().replace("\n", " ")
-        if len(clean) > 50:
-            clean = clean[:50] + "…"
-        if clean not in results:
-            results.append(clean)
-        if len(results) >= max_n:
-            break
-    return results
+def _check(kw): return kw in all_text
 
-# USD/KRW 변동요인 (전망 방향에 맞는 것만)
+# USD/KRW 변동요인
 if usd_dir == "상승":
-    usd_factors = _extract_factors(
-        ["달러", "USD", "원/달러", "원달러", "환율"],
-        ["상방", "상승", "자극", "쏠림", "우세", "상회", "유가", "리스크", "확전", "불확실"])
+    usd_factors = []
+    if _check("전쟁") or _check("이란") or _check("중동"):
+        usd_factors.append("이란 전쟁 불확실성 → 위험회피 심리 → 달러 매수 자극")
+    if _check("유가"):
+        usd_factors.append("국제유가 고공행진 → 경상수지 악화 우려 → 원화 약세 압력")
+    if _check("쏠림") or _check("개입"):
+        usd_factors.append("원화 약세 쏠림 심화, 다만 외환당국 개입 리스크 상존")
+    if _check("CPI") or _check("물가") or _check("인플레"):
+        usd_factors.append("미 3월 CPI(4/10) 고유가 반영 시 → 금리인하 기대 후퇴")
+    if _check("금통위") or _check("한국은행"):
+        usd_factors.append("한은 금통위(4/11) 당국 경계 발언 여부가 상단 제한 변수")
     if not usd_factors:
-        usd_factors = ["이란 전쟁 불확실성으로 상방 우세", "고유가 장기화 → 원화 약세 압력", "외국인 배당 역송금 달러 수요"]
+        usd_factors = ["대외 불확실성 확대 → 달러 강세 기조 지속"]
 elif usd_dir == "하락":
-    usd_factors = _extract_factors(
-        ["달러", "USD", "원/달러", "원달러", "환율"],
-        ["하방", "하락", "하회", "강세", "개입", "매도", "종전"])
+    usd_factors = []
+    if _check("종전") or _check("휴전"):
+        usd_factors.append("종전·휴전 기대감 → 위험선호 회복 → 원화 강세 전환")
+    if _check("매도") or _check("수출"):
+        usd_factors.append("수출업체 고점 네고 매도세 유입 → 환율 하방 압력")
+    if _check("개입"):
+        usd_factors.append("외환당국 스무딩 오퍼레이션 → 상단 제한")
     if not usd_factors:
-        usd_factors = ["종전 기대감 → 원화 강세", "당국 개입 경계", "수출업체 매도세"]
+        usd_factors = ["원화 강세 요인 우세 → 하방 테스트 전망"]
 else:
-    usd_factors = ["상방·하방 요인 혼재로 방향성 탐색 구간"]
+    usd_factors = ["상방·하방 요인 혼재 → 박스권 등락 예상"]
 
 # CNY/KRW 변동요인
 if cny_dir == "하락":
-    cny_factors = _extract_factors(
-        ["위안", "CNY", "중국"],
-        ["약세", "둔화", "부진", "절하", "하방", "하락", "관세"])
+    cny_factors = []
+    if _check("내수") or _check("둔화") or _check("부진"):
+        cny_factors.append("중국 내수 둔화 → 위안화 약세 → 원/위안 하방 압력")
+    if _check("관세") or _check("무역"):
+        cny_factors.append("미중 관세 리스크 재부각 → 위안화 절하 압력")
+    if _check("유가") or _check("안전자산"):
+        cny_factors.append("고유가 → 안전자산 선호 → 위안화 프록시 원화 동반 약세")
     if not cny_factors:
-        cny_factors = ["중국 내수 둔화 → 위안화 약세", "미중 관세 리스크 재부각", "달러 강세 동조 → 원/위안 하락"]
+        cny_factors = ["위안화 약세 기조 지속 → CNY/KRW 하방 압력"]
 elif cny_dir == "상승":
-    cny_factors = _extract_factors(
-        ["위안", "CNY", "중국"],
-        ["강세", "반등", "회복", "절상", "상방"])
+    cny_factors = []
+    if _check("회복") or _check("반등"):
+        cny_factors.append("중국 경기 회복 기대 → 위안화 반등 → CNY/KRW 상승")
+    if _check("호르무즈") or _check("종전"):
+        cny_factors.append("호르무즈 정상화 조짐 → 위험선호 회복 → 위안화 강세")
     if not cny_factors:
-        cny_factors = ["중동 리스크 완화 시 위안화 반등", "미중 협상 진전 기대"]
+        cny_factors = ["위안화 반등 기대 → CNY/KRW 상방 시도"]
 else:
     cny_factors = ["위안화 방향성 혼조 → 제한적 등락"]
 
 # USD/CNY 변동요인
 if cross_dir == "하락":
-    cross_factors = _extract_factors(
-        ["위안", "USD/CNY", "재정", "PBOC", "당국"],
-        ["안정", "둔감", "관리", "방어", "절상"])
+    cross_factors = []
+    if _check("둔감") or _check("안정"):
+        cross_factors.append("지정학적 이벤트에 둔감, PBOC 안정적 관리 기조 유지")
+    if _check("PBOC") or _check("당국"):
+        cross_factors.append("PBOC 기준환율 고시 → 위안화 급락 방어 의지")
     if not cross_factors:
-        cross_factors = ["PBOC 기준환율 고시 통한 안정적 관리", "지정학 이벤트에 상대적으로 둔감"]
+        cross_factors = ["PBOC 환율 방어 → 재정환율 안정"]
 elif cross_dir == "상승":
-    cross_factors = _extract_factors(
-        ["위안", "USD/CNY", "재정"],
-        ["절하", "강세", "상승", "압력"])
+    cross_factors = []
+    if _check("달러") and _check("강세"):
+        cross_factors.append("달러 인덱스 강세 → 위안화 절하 압력 → 재정환율 상승")
+    if _check("유가"):
+        cross_factors.append("고유가 → 달러 선호 → USD/CNY 상방")
     if not cross_factors:
         cross_factors = ["달러 강세 → 위안 절하 압력"]
 else:

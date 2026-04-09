@@ -999,7 +999,8 @@ def _run_simulator():
 
     sl1, sl2 = st.columns(2)
     with sl1:
-        pct_val = st.slider("환전 비율", min_value=10, max_value=100, value=100, step=10, format="%d%%") / 100
+        sim_pct = st.selectbox("환전 비율", ["30%", "50%", "70%", "100%"], index=3)
+        pct_val = int(sim_pct.replace("%", "")) / 100
         sim_cny_actual = sim_cny * pct_val
     with sl2:
         if sim_target == "KRW":

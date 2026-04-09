@@ -1018,67 +1018,118 @@ fc3.markdown(_forecast_card("USD / CNY (재정)", f"{cross_lo} ~ {cross_hi}", cr
 
 st.divider()
 
-# 통화별 분석 (가독성 높은 카드 형태)
+# 통화별 분석 (PDF 동적 추출 + 흐름형 서술)
 st.markdown("##### 📝 통화별 분석")
 st.caption("국민은행 · 신한은행 금주 전망 PDF + 서울파이낸셜 종합")
 
-def _analysis_card(title, band_str, direction, factors_up, factors_dn, outlook):
+def _flow_card(title, band_str, direction, up_factors, dn_factors, conclusion):
+    """상승→하락→종합 흐름형 분석 카드."""
     bg, bc = _dir_bg(direction)
     arrow = _dir_arrow(direction)
-    up_html = "".join(f"<li>{f}</li>" for f in factors_up) if factors_up else "<li>-</li>"
-    dn_html = "".join(f"<li>{f}</li>" for f in factors_dn) if factors_dn else "<li>-</li>"
+
+    # 상승 요인 → 불렛
+    up_bullets = "".join(f'<div style="margin-bottom:3px;">• {f} <span style="color:#C00000;font-weight:600;">▲</span></div>' for f in up_factors)
+    # 하락 요인 → "다만" 전환
+    dn_bullets = "".join(f'<div style="margin-bottom:3px;">• {f} <span style="color:#4A90D9;font-weight:600;">▼</span></div>' for f in dn_factors)
+
     return (
         f'<div style="margin-bottom:16px;padding:14px 18px;background:{bg};border-radius:8px;border-left:4px solid {bc};">'
-        f'<div style="font-size:0.95rem;font-weight:800;color:{bc};margin-bottom:8px;">'
+        f'<div style="font-size:0.95rem;font-weight:800;color:{bc};margin-bottom:10px;">'
         f'{arrow} {title} — {band_str}</div>'
-        f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
-        f'<tr>'
-        f'<td style="width:50%;vertical-align:top;padding:4px 8px;">'
-        f'<b style="color:#C00000;">▲ 상승 요인</b><ul style="margin:4px 0;padding-left:18px;line-height:1.7;">{up_html}</ul></td>'
-        f'<td style="width:50%;vertical-align:top;padding:4px 8px;">'
-        f'<b style="color:#4A90D9;">▼ 하락 요인</b><ul style="margin:4px 0;padding-left:18px;line-height:1.7;">{dn_html}</ul></td>'
-        f'</tr></table>'
-        f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid {bc}30;font-size:0.87rem;line-height:1.7;">'
-        f'<b>금주 전망:</b> {outlook}</div>'
-        f'</div>'
+        f'<div style="font-size:0.87rem;line-height:1.8;color:#333;">'
+        f'{up_bullets}'
+        f'<div style="margin:6px 0 3px 0;color:#666;font-size:0.82rem;">── 다만 ──</div>'
+        f'{dn_bullets}'
+        f'<div style="margin-top:8px;padding-top:8px;border-top:1px solid {bc}30;font-weight:600;">'
+        f'→ 종합: {conclusion}</div>'
+        f'</div></div>'
     )
 
+# PDF에서 추출된 상승/하락 변수를 문장으로 변환
+def _vars_to_sentences(vars_list, all_sents, detect_kws):
+    """변수 키워드에 해당하는 PDF 원문 문장을 찾아서 요약."""
+    results = []
+    for v in vars_list:
+        for s in all_sents:
+            if v in s and any(kw in s for kw in detect_kws) and len(s) > 15:
+                # 문장 정리 (60자 제한)
+                clean = s.strip()[:80]
+                if clean not in results:
+                    results.append(clean)
+                break
+    return results
+
+all_s = report.get("all_sentences", [])
+
 # USD/KRW
-usd_up = ca.get("USD_KRW", {}).get("upside_vars", [])
-usd_dn = ca.get("USD_KRW", {}).get("downside_vars", [])
-usd_up_detail = [
-    "이란 전쟁 불확실성 · 국제유가 고공행진 (호르무즈 해협 리스크)",
-    "4월 외국인 배당 역송금 달러 매수 수요 본격화",
-    "미 3월 CPI(4/10) 고유가 반영 시 금리인하 기대 후퇴 → 달러 강세",
-] if "리스크" in " ".join(usd_up) or "유가" in " ".join(usd_up) else [f"{v} 이슈" for v in usd_up[:3]] or ["대외 불확실성 확대"]
-usd_dn_detail = [
-    "한국은행 금통위(4/11) 당국 개입 의지 확인 시 상단 제한",
-    "수출업체 고점 매도세 유입",
-    "종전 기대감 부각 시 위험선호 회복 → 원화 강세",
-] if "완화" in " ".join(usd_dn) or "수출" in " ".join(usd_dn) else [f"{v} 기대" for v in usd_dn[:3]] or ["당국 개입 리스크"]
-st.markdown(_analysis_card(
-    "USD/KRW", f"{usd_lo:,}~{usd_hi:,}원", usd_dir, usd_up_detail, usd_dn_detail,
-    f"상단 <b>{usd_hi:,}원</b> 테스트와 당국 개입 경계 사이에서 등락 예상. "
-    f"CPI(4/10)·금통위(4/11) 결과가 방향성 결정 핵심 변수."
-), unsafe_allow_html=True)
+usd_info = ca.get("USD_KRW", {})
+usd_up_raw = _vars_to_sentences(usd_info.get("upside_vars", []), all_s, ["달러", "USD", "원/달러", "원달러"])
+usd_dn_raw = _vars_to_sentences(usd_info.get("downside_vars", []), all_s, ["달러", "USD", "원/달러", "원달러"])
+# 최소 보장
+if not usd_up_raw:
+    usd_up_raw = ["대외 불확실성 확대에 따른 달러 매수 심리 자극"]
+if not usd_dn_raw:
+    usd_dn_raw = ["외환당국 개입 경계 및 수출업체 고점 매도세"]
+
+up_count = len(usd_info.get("upside_vars", []))
+dn_count = len(usd_info.get("downside_vars", []))
+if usd_dir == "상승":
+    usd_conclusion = (f"상방 요인({up_count}건)이 하방 요인({dn_count}건)보다 우세하여 <b>상승 흐름</b> 전망. "
+                      f"<b>{usd_lo:,}~{usd_hi:,}원</b> 박스권 내 상방 쏠림 예상.")
+elif usd_dir == "하락":
+    usd_conclusion = (f"하방 요인({dn_count}건)이 상방 요인({up_count}건)보다 우세하여 <b>하락 흐름</b> 전망. "
+                      f"<b>{usd_lo:,}원</b> 하단 테스트 가능성.")
+else:
+    usd_conclusion = f"상승·하락 요인 혼재로 <b>{usd_lo:,}~{usd_hi:,}원</b> 박스권 보합 흐름 전망."
+
+st.markdown(_flow_card("USD/KRW", f"{usd_lo:,}~{usd_hi:,}원", usd_dir,
+                       usd_up_raw[:3], usd_dn_raw[:3], usd_conclusion), unsafe_allow_html=True)
 
 # CNY/KRW
-st.markdown(_analysis_card(
-    "CNY/KRW", f"{cny_lo:,}~{cny_hi:,}원", cny_dir,
-    ["중동 리스크 완화 · 호르무즈 해협 정상화 조짐 시 위안화 반등", "미중 무역 협상 진전 기대"],
-    ["중국 내수 둔화 우려 · 위안화 프록시 원화 동반 약세", "미중 관세 리스크 재부각 → 위안화 절하 압력", "글로벌 안전자산 선호 지속"],
-    f"위안화 약세 기조 속 <b>{cny_lo:,}원</b>대 하단 지지 여부가 관건. "
-    f"호르무즈 정상화 시 <b>{cny_hi:,}원</b>대 회복 시도 가능."
-), unsafe_allow_html=True)
+cny_info = ca.get("CNY_KRW", {})
+cny_up_raw = _vars_to_sentences(cny_info.get("upside_vars", []), all_s, ["위안", "CNY", "중국"])
+cny_dn_raw = _vars_to_sentences(cny_info.get("downside_vars", []), all_s, ["위안", "CNY", "중국"])
+if not cny_up_raw:
+    cny_up_raw = ["중동 리스크 완화 시 위안화 반등 기대"]
+if not cny_dn_raw:
+    cny_dn_raw = ["중국 내수 둔화 · 위안화 프록시 원화 동반 약세"]
+
+cup = len(cny_info.get("upside_vars", []))
+cdn = len(cny_info.get("downside_vars", []))
+if cny_dir == "하락":
+    cny_conclusion = (f"하방 요인({cdn}건)이 우세하여 <b>하락 흐름</b> 전망. "
+                      f"<b>{cny_lo:,}원</b>대 하단 지지 여부가 관건.")
+elif cny_dir == "상승":
+    cny_conclusion = (f"상방 요인({cup}건)이 우세하여 <b>상승 흐름</b> 전망. "
+                      f"<b>{cny_hi:,}원</b>대 회복 시도 가능.")
+else:
+    cny_conclusion = f"방향성 혼조 속 <b>{cny_lo:,}~{cny_hi:,}원</b> 박스권 흐름 전망."
+
+st.markdown(_flow_card("CNY/KRW", f"{cny_lo:,}~{cny_hi:,}원", cny_dir,
+                       cny_up_raw[:3], cny_dn_raw[:3], cny_conclusion), unsafe_allow_html=True)
 
 # USD/CNY
-st.markdown(_analysis_card(
-    "USD/CNY (재정)", f"{cross_lo}~{cross_hi}", cross_dir,
-    ["달러 인덱스 강세 지속 시 위안화 절하 압력", "미국 CPI 서프라이즈 → 달러 급등 가능성"],
-    ["인민은행(PBOC) 기준환율 고시 통한 적극적 환율 방어", "지정학적 이벤트에 상대적으로 둔감한 관리 기조"],
-    f"PBOC 방어 의지로 <b>{cross_lo}~{cross_hi}</b> 범위 내 제한적 등락 전망. "
-    f"달러 강세에도 당국 의지로 변동폭 제한적."
-), unsafe_allow_html=True)
+cross_info = ca.get("USD_CNY", {})
+cross_up_raw = _vars_to_sentences(cross_info.get("upside_vars", []), all_s, ["재정", "USD/CNY", "위안", "달러"])
+cross_dn_raw = _vars_to_sentences(cross_info.get("downside_vars", []), all_s, ["재정", "USD/CNY", "위안", "PBOC"])
+if not cross_up_raw:
+    cross_up_raw = ["달러 강세 지속 시 위안화 절하 압력"]
+if not cross_dn_raw:
+    cross_dn_raw = ["PBOC 기준환율 고시 통한 안정적 관리 기조"]
+
+xup = len(cross_info.get("upside_vars", []))
+xdn = len(cross_info.get("downside_vars", []))
+if cross_dir == "하락":
+    cross_conclusion = (f"PBOC 방어 의지({xdn}건 언급)가 우세하여 <b>{cross_lo}~{cross_hi}</b> 범위 내 "
+                        f"<b>안정적 흐름</b> 전망.")
+elif cross_dir == "상승":
+    cross_conclusion = (f"달러 강세 요인({xup}건)이 우세하나, PBOC 방어로 <b>{cross_hi}</b> 상단 제한적. "
+                        f"<b>제한적 상승</b> 전망.")
+else:
+    cross_conclusion = f"PBOC 방어 의지와 달러 강세 간 균형. <b>{cross_lo}~{cross_hi}</b> 보합 전망."
+
+st.markdown(_flow_card("USD/CNY (재정)", f"{cross_lo}~{cross_hi}", cross_dir,
+                       cross_up_raw[:3], cross_dn_raw[:3], cross_conclusion), unsafe_allow_html=True)
 
 st.divider()
 

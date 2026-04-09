@@ -84,10 +84,19 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-weight:700!impo
     font-size: 0.9rem; line-height: 1.7;
 }
 hr { border-color: #e8e8e8 !important; }
-/* 슬라이더·라디오·셀렉트박스 강조색 남색 */
+/* 슬라이더 남색 */
 div[data-testid="stSlider"] [role="slider"] { background: #2E75B6 !important; }
 div[data-testid="stSlider"] [data-testid="stThumbValue"] { color: #2E75B6 !important; }
+div[data-testid="stSlider"] [data-testid="stTickBar"] > div { background: #2E75B6 !important; }
+div[data-testid="stSlider"] div[role="slider"]::before { background: #2E75B6 !important; }
+/* 슬라이더 트랙 (채워진 부분) */
+div[data-testid="stSlider"] div[data-baseweb="slider"] div[role="progressbar"] { background-color: #2E75B6 !important; }
+div[data-testid="stSlider"] div[data-baseweb="slider"] div:nth-child(3) { background-color: #2E75B6 !important; }
+div[data-testid="stSlider"] div[data-baseweb="slider"] div:nth-child(4) div { background-color: #2E75B6 !important; }
+/* 라디오 버튼 남색 */
 div[role="radiogroup"] label[data-checked="true"] { background: #2E75B6 !important; color: white !important; border-color: #2E75B6 !important; }
+div[data-testid="stRadio"] input:checked + div { border-color: #2E75B6 !important; }
+div[data-testid="stRadio"] input:checked + div::before { background-color: #2E75B6 !important; }
 </style>
 """, unsafe_allow_html=True)
 

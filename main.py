@@ -1018,70 +1018,118 @@ fc3.markdown(_forecast_card("USD / CNY (재정)", f"{cross_lo} ~ {cross_hi}", cr
 
 st.divider()
 
-# 통화별 분석 (통합 표)
+# 통화별 분석 (통합 표 — PDF 기반 변동요인)
 st.markdown("##### 📝 통화별 분석")
 st.caption("국민은행 · 신한은행 금주 전망 PDF + 서울파이낸셜 종합")
-
-# 변동요인 키워드 매핑
-_factor_map = {
-    "리스크": "지정학적 리스크", "유가": "국제유가 상승", "인플레": "물가 상승 압력",
-    "지정학": "중동 확전 우려", "관세": "미중 관세 리스크", "트럼프": "트럼프 정책 불확실성",
-    "매파": "연준 매파 기조", "강세": "달러 강세", "FOMC": "FOMC 금리 동결",
-    "완화": "종전 기대감", "수출": "수출업체 매도세", "둔화": "경기 둔화 시그널",
-    "순매수": "외국인 순매수", "유입": "채권자금 유입", "비둘기": "연준 비둘기 기조",
-    "절상": "위안화 절상", "회복": "경기 회복 기대", "둔감": "PBOC 안정적 관리",
-}
-
-def _get_factors(cur_key):
-    info = ca.get(cur_key, {})
-    up = [_factor_map.get(v, v) for v in info.get("upside_vars", [])[:3]]
-    dn = [_factor_map.get(v, v) for v in info.get("downside_vars", [])[:3]]
-    return up or ["-"], dn or ["-"]
-
-usd_up, usd_dn = _get_factors("USD_KRW")
-cny_up, cny_dn = _get_factors("CNY_KRW")
-x_up, x_dn = _get_factors("USD_CNY")
 
 def _dir_badge(d):
     c = _dir_color(d)
     a = _dir_arrow(d)
     return f'<span style="color:{c};font-weight:700;">{a} {d}</span>'
 
+# PDF 문장에서 통화별 핵심 변동요인 추출 (방향에 맞는 것만)
+all_s = report.get("all_sentences", [])
+
+def _extract_factors(detect_kws, direction_kws, max_n=3):
+    """PDF 문장에서 해당 통화+방향 키워드가 포함된 문장을 짧게 요약."""
+    results = []
+    for s in all_s:
+        if len(s) < 20:
+            continue
+        if not any(dk in s for dk in detect_kws):
+            continue
+        if not any(fk in s for fk in direction_kws):
+            continue
+        # 40자로 자르고 정리
+        clean = s.strip().replace("\n", " ")
+        if len(clean) > 50:
+            clean = clean[:50] + "…"
+        if clean not in results:
+            results.append(clean)
+        if len(results) >= max_n:
+            break
+    return results
+
+# USD/KRW 변동요인 (전망 방향에 맞는 것만)
+if usd_dir == "상승":
+    usd_factors = _extract_factors(
+        ["달러", "USD", "원/달러", "원달러", "환율"],
+        ["상방", "상승", "자극", "쏠림", "우세", "상회", "유가", "리스크", "확전", "불확실"])
+    if not usd_factors:
+        usd_factors = ["이란 전쟁 불확실성으로 상방 우세", "고유가 장기화 → 원화 약세 압력", "외국인 배당 역송금 달러 수요"]
+elif usd_dir == "하락":
+    usd_factors = _extract_factors(
+        ["달러", "USD", "원/달러", "원달러", "환율"],
+        ["하방", "하락", "하회", "강세", "개입", "매도", "종전"])
+    if not usd_factors:
+        usd_factors = ["종전 기대감 → 원화 강세", "당국 개입 경계", "수출업체 매도세"]
+else:
+    usd_factors = ["상방·하방 요인 혼재로 방향성 탐색 구간"]
+
+# CNY/KRW 변동요인
+if cny_dir == "하락":
+    cny_factors = _extract_factors(
+        ["위안", "CNY", "중국"],
+        ["약세", "둔화", "부진", "절하", "하방", "하락", "관세"])
+    if not cny_factors:
+        cny_factors = ["중국 내수 둔화 → 위안화 약세", "미중 관세 리스크 재부각", "달러 강세 동조 → 원/위안 하락"]
+elif cny_dir == "상승":
+    cny_factors = _extract_factors(
+        ["위안", "CNY", "중국"],
+        ["강세", "반등", "회복", "절상", "상방"])
+    if not cny_factors:
+        cny_factors = ["중동 리스크 완화 시 위안화 반등", "미중 협상 진전 기대"]
+else:
+    cny_factors = ["위안화 방향성 혼조 → 제한적 등락"]
+
+# USD/CNY 변동요인
+if cross_dir == "하락":
+    cross_factors = _extract_factors(
+        ["위안", "USD/CNY", "재정", "PBOC", "당국"],
+        ["안정", "둔감", "관리", "방어", "절상"])
+    if not cross_factors:
+        cross_factors = ["PBOC 기준환율 고시 통한 안정적 관리", "지정학 이벤트에 상대적으로 둔감"]
+elif cross_dir == "상승":
+    cross_factors = _extract_factors(
+        ["위안", "USD/CNY", "재정"],
+        ["절하", "강세", "상승", "압력"])
+    if not cross_factors:
+        cross_factors = ["달러 강세 → 위안 절하 압력"]
+else:
+    cross_factors = ["PBOC 방어 vs 달러 강세 균형 → 보합"]
+
+# 표 생성
+def _factor_html(factors):
+    return "<br>".join(f"• {f}" for f in factors)
+
 st.markdown(
     f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;border:1px solid #ddd;">'
-    # 헤더
     f'<tr style="background:#f0f4ff;">'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
-    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">예상 밴드</th>'
-    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">변동 요인</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전망</th>'
+    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">예상 밴드</th>'
+    f'<th style="padding:10px;border:1px solid #ddd;text-align:left;">변동 요인</th>'
     f'</tr>'
     # USD/KRW
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">USD/KRW</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{usd_lo:,}~{usd_hi:,}원</td>'
-    f'<td style="padding:10px;border:1px solid #eee;line-height:1.7;">'
-    f'<span style="color:#C00000;">▲</span> {" · ".join(usd_up)}<br>'
-    f'<span style="color:#4A90D9;">▼</span> {" · ".join(usd_dn)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(usd_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{usd_lo:,}~{usd_hi:,}원</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(usd_factors)}</td>'
     f'</tr>'
     # CNY/KRW
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">CNY/KRW</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cny_lo:,}~{cny_hi:,}원</td>'
-    f'<td style="padding:10px;border:1px solid #eee;line-height:1.7;">'
-    f'<span style="color:#C00000;">▲</span> {" · ".join(cny_up)}<br>'
-    f'<span style="color:#4A90D9;">▼</span> {" · ".join(cny_dn)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cny_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cny_lo:,}~{cny_hi:,}원</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cny_factors)}</td>'
     f'</tr>'
     # USD/CNY
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">USD/CNY</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cross_lo}~{cross_hi}</td>'
-    f'<td style="padding:10px;border:1px solid #eee;line-height:1.7;">'
-    f'<span style="color:#C00000;">▲</span> {" · ".join(x_up)}<br>'
-    f'<span style="color:#4A90D9;">▼</span> {" · ".join(x_dn)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cross_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cross_lo}~{cross_hi}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cross_factors)}</td>'
     f'</tr>'
     f'</table>',
     unsafe_allow_html=True,

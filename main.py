@@ -995,10 +995,14 @@ def _run_simulator():
 
     usd_rate = float(latest["USD_KRW"])
 
-    sc1, sc2 = st.columns(2)
+    sc1, sc2, sc3 = st.columns(3)
     with sc1:
         sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
     with sc2:
+        sim_pct = st.selectbox("환전 비율", ["30%", "50%", "70%", "100%"], index=3)
+        pct_val = int(sim_pct.replace("%", "")) / 100
+        sim_cny_actual = sim_cny * pct_val
+    with sc3:
         if sim_target == "KRW":
             rate_list = list(range(int(cny_lo), int(cny_hi) + 1))
             cur_rate = round(float(latest["CNY_KRW"]))
@@ -1043,19 +1047,16 @@ def _run_simulator():
         sim_rate = rate_list_f[rate_labels.index(selected)]
 
     if sim_target == "KRW":
-        # CNY→KRW: sim_rate = CNY/KRW 환율
-        sim_krw = sim_cny * sim_rate
-        sim_pnl = sim_cny * (sim_rate - sim_book)
+        sim_krw = sim_cny_actual * sim_rate
+        sim_pnl = sim_cny_actual * (sim_rate - sim_book)
         conv_label = f"{sim_krw:,.0f} 원"
         rate_label = f"적용환율 {sim_rate:,.2f}원"
-        pnl_formula = f"({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny:,.0f}"
+        pnl_formula = f"({sim_rate:,.2f} - {sim_book:,.2f}) × {sim_cny_actual:,.0f}"
     else:
-        # CNY→USD: sim_rate = USD/CNY 재정환율
-        sim_usd = sim_cny / sim_rate
-        # 장부 USD/CNY 역산 (장부 CNY/KRW ÷ 장부시점 USD/KRW 근사 → 직접 재정환율 사용)
-        book_cross = float(latest["USD_CNY"])  # 현재 재정환율 기준 비교
-        sim_pnl_usd = sim_cny * (1/sim_rate - 1/book_cross)
-        sim_pnl = sim_pnl_usd * usd_rate  # KRW 환산
+        sim_usd = sim_cny_actual / sim_rate
+        book_cross = float(latest["USD_CNY"])
+        sim_pnl_usd = sim_cny_actual * (1/sim_rate - 1/book_cross)
+        sim_pnl = sim_pnl_usd * usd_rate
         conv_label = f"${sim_usd:,.2f}"
         rate_label = f"적용 재정환율 {sim_rate:.2f}"
         pnl_formula = f"CNY÷{sim_rate:.2f} vs CNY÷{book_cross:.2f}"
@@ -1065,9 +1066,9 @@ def _run_simulator():
     st.markdown(
         f'<div style="display:flex;gap:12px;margin-top:8px;">'
         f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
-        f'<div style="font-size:0.8rem;color:#888;">보유 CNY</div>'
-        f'<div style="font-size:1.3rem;font-weight:700;">{sim_cny:,.0f}</div>'
-        f'<div style="font-size:0.75rem;color:#888;">장부단가 {sim_book:,.2f}원</div>'
+        f'<div style="font-size:0.8rem;color:#888;">환전 CNY ({sim_pct})</div>'
+        f'<div style="font-size:1.3rem;font-weight:700;">{sim_cny_actual:,.0f}</div>'
+        f'<div style="font-size:0.75rem;color:#888;">전체 {sim_cny:,.0f} · 장부 {sim_book:,.2f}원</div>'
         f'</div>'
         f'<div style="flex:1;background:#f8f9fc;border:1px solid #ddd;border-radius:10px;padding:14px 18px;">'
         f'<div style="font-size:0.8rem;color:#888;">환전 금액 ({sim_target})</div>'

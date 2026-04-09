@@ -1040,8 +1040,6 @@ if usd_dir == "상승":
         usd_factors.append("이란 전쟁 불확실성 → 위험회피 심리 → 달러 매수 자극")
     if _check("유가"):
         usd_factors.append("국제유가 고공행진 → 경상수지 악화 우려 → 원화 약세 압력")
-    if _check("쏠림") or _check("개입"):
-        usd_factors.append("원화 약세 쏠림 심화, 다만 외환당국 개입 리스크 상존")
     if _check("CPI") or _check("물가") or _check("인플레"):
         usd_factors.append("미 3월 CPI(4/10) 고유가 반영 시 → 금리인하 기대 후퇴")
     if _check("금통위") or _check("한국은행"):
@@ -1108,7 +1106,7 @@ def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
 st.markdown(
-    f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;border:1px solid #ddd;">'
+    f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
     f'<tr style="background:#f0f4ff;">'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전망</th>'

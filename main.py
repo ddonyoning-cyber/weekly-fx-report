@@ -1037,69 +1037,69 @@ def _check(kw): return kw in all_text
 if usd_dir == "상승":
     usd_factors = []
     if _check("전쟁") or _check("이란") or _check("중동"):
-        usd_factors.append("이란 전쟁 불확실성 → 위험회피 심리 → 달러 매수 자극")
+        usd_factors.append("<b>이란 전쟁</b> 불확실성 → 위험회피 심리 → <b>달러 매수</b> 자극")
     if _check("유가"):
-        usd_factors.append("국제유가 고공행진 → 경상수지 악화 우려 → 원화 약세 압력")
+        usd_factors.append("<b>국제유가</b> 고공행진 → 경상수지 악화 우려 → <b>원화 약세</b> 압력")
     if _check("CPI") or _check("물가") or _check("인플레"):
-        usd_factors.append("미 3월 CPI(4/10) 고유가 반영 시 → 금리인하 기대 후퇴")
+        usd_factors.append("미 3월 <b>CPI</b>(4/10) 고유가 반영 시 → <b>금리인하 기대 후퇴</b>")
     if _check("금통위") or _check("한국은행"):
-        usd_factors.append("한은 금통위(4/11) 당국 경계 발언 여부가 상단 제한 변수")
+        usd_factors.append("한은 <b>금통위</b>(4/11) 당국 경계 발언 여부가 <b>상단 제한</b> 변수")
     if not usd_factors:
-        usd_factors = ["대외 불확실성 확대 → 달러 강세 기조 지속"]
+        usd_factors = ["<b>대외 불확실성</b> 확대 → 달러 강세 기조 지속"]
 elif usd_dir == "하락":
     usd_factors = []
     if _check("종전") or _check("휴전"):
-        usd_factors.append("종전·휴전 기대감 → 위험선호 회복 → 원화 강세 전환")
+        usd_factors.append("<b>종전·휴전</b> 기대감 → 위험선호 회복 → <b>원화 강세</b> 전환")
     if _check("매도") or _check("수출"):
-        usd_factors.append("수출업체 고점 네고 매도세 유입 → 환율 하방 압력")
+        usd_factors.append("<b>수출업체</b> 고점 네고 매도세 유입 → 환율 <b>하방 압력</b>")
     if _check("개입"):
-        usd_factors.append("외환당국 스무딩 오퍼레이션 → 상단 제한")
+        usd_factors.append("<b>외환당국</b> 스무딩 오퍼레이션 → <b>상단 제한</b>")
     if not usd_factors:
-        usd_factors = ["원화 강세 요인 우세 → 하방 테스트 전망"]
+        usd_factors = ["원화 강세 요인 우세 → <b>하방 테스트</b> 전망"]
 else:
-    usd_factors = ["상방·하방 요인 혼재 → 박스권 등락 예상"]
+    usd_factors = ["상방·하방 요인 혼재 → <b>박스권</b> 등락 예상"]
 
 # CNY/KRW 변동요인
 if cny_dir == "하락":
     cny_factors = []
     if _check("내수") or _check("둔화") or _check("부진"):
-        cny_factors.append("중국 내수 둔화 → 위안화 약세 → 원/위안 하방 압력")
+        cny_factors.append("중국 <b>내수 둔화</b> → <b>위안화 약세</b> → 원/위안 하방 압력")
     if _check("관세") or _check("무역"):
-        cny_factors.append("미중 관세 리스크 재부각 → 위안화 절하 압력")
+        cny_factors.append("<b>미중 관세</b> 리스크 재부각 → <b>위안화 절하</b> 압력")
     if _check("유가") or _check("안전자산"):
-        cny_factors.append("고유가 → 안전자산 선호 → 위안화 프록시 원화 동반 약세")
+        cny_factors.append("<b>고유가</b> → 안전자산 선호 → 위안화 프록시 <b>원화 동반 약세</b>")
     if not cny_factors:
-        cny_factors = ["위안화 약세 기조 지속 → CNY/KRW 하방 압력"]
+        cny_factors = ["<b>위안화 약세</b> 기조 지속 → CNY/KRW 하방 압력"]
 elif cny_dir == "상승":
     cny_factors = []
     if _check("회복") or _check("반등"):
-        cny_factors.append("중국 경기 회복 기대 → 위안화 반등 → CNY/KRW 상승")
+        cny_factors.append("중국 <b>경기 회복</b> 기대 → <b>위안화 반등</b> → CNY/KRW 상승")
     if _check("호르무즈") or _check("종전"):
-        cny_factors.append("호르무즈 정상화 조짐 → 위험선호 회복 → 위안화 강세")
+        cny_factors.append("<b>호르무즈</b> 정상화 조짐 → 위험선호 회복 → <b>위안화 강세</b>")
     if not cny_factors:
-        cny_factors = ["위안화 반등 기대 → CNY/KRW 상방 시도"]
+        cny_factors = ["<b>위안화 반등</b> 기대 → CNY/KRW 상방 시도"]
 else:
-    cny_factors = ["위안화 방향성 혼조 → 제한적 등락"]
+    cny_factors = ["위안화 방향성 혼조 → <b>제한적 등락</b>"]
 
 # USD/CNY 변동요인
 if cross_dir == "하락":
     cross_factors = []
     if _check("둔감") or _check("안정"):
-        cross_factors.append("지정학적 이벤트에 둔감, PBOC 안정적 관리 기조 유지")
+        cross_factors.append("지정학적 이벤트에 <b>둔감</b>, <b>PBOC</b> 안정적 관리 기조 유지")
     if _check("PBOC") or _check("당국"):
-        cross_factors.append("PBOC 기준환율 고시 → 위안화 급락 방어 의지")
+        cross_factors.append("<b>PBOC</b> 기준환율 고시 → <b>위안화 급락 방어</b> 의지")
     if not cross_factors:
-        cross_factors = ["PBOC 환율 방어 → 재정환율 안정"]
+        cross_factors = ["<b>PBOC</b> 환율 방어 → 재정환율 안정"]
 elif cross_dir == "상승":
     cross_factors = []
     if _check("달러") and _check("강세"):
-        cross_factors.append("달러 인덱스 강세 → 위안화 절하 압력 → 재정환율 상승")
+        cross_factors.append("<b>달러 인덱스</b> 강세 → <b>위안화 절하</b> 압력 → 재정환율 상승")
     if _check("유가"):
-        cross_factors.append("고유가 → 달러 선호 → USD/CNY 상방")
+        cross_factors.append("<b>고유가</b> → 달러 선호 → <b>USD/CNY 상방</b>")
     if not cross_factors:
-        cross_factors = ["달러 강세 → 위안 절하 압력"]
+        cross_factors = ["<b>달러 강세</b> → 위안 절하 압력"]
 else:
-    cross_factors = ["PBOC 방어 vs 달러 강세 균형 → 보합"]
+    cross_factors = ["<b>PBOC</b> 방어 vs <b>달러 강세</b> 균형 → <b>보합</b>"]
 
 # 표 생성
 def _factor_html(factors):

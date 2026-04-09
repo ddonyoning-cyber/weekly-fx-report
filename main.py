@@ -1105,16 +1105,34 @@ else:
 def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
-# 금주 경제지표 정리
-indicators = report.get("indicators", [])
-ind_items = []
-for ind in indicators[:4]:
-    d = ind["date"] if ind["date"] != "미정" else ""
-    if d:
-        ind_items.append(f'{d} {ind["name"]}')
-    else:
-        ind_items.append(ind["name"])
-ind_html = "<br>".join(f"• {item}" for item in ind_items) if ind_items else "• 주요 지표 없음"
+# 통화별 관련 경제지표 매핑
+all_text = " ".join(report.get("all_sentences", []))
+
+def _currency_indicators(detect_kws):
+    """해당 통화에 영향을 주는 지표를 PDF 키워드 기반으로 선별."""
+    items = []
+    if any(kw in all_text for kw in ["CPI", "소비자물가", "인플레"]) and any(k in " ".join(detect_kws) for k in ["달러", "USD"]):
+        items.append("미 3월 CPI (4/10) → 달러 방향성 결정")
+    if any(kw in all_text for kw in ["금통위", "한국은행", "통화정책"]) and any(k in " ".join(detect_kws) for k in ["달러", "USD", "원"]):
+        items.append("한은 금통위 (4/11) → 당국 개입 의지 확인")
+    if any(kw in all_text for kw in ["유가", "호르무즈", "원유"]):
+        items.append("국제유가 · 호르무즈 해협 동향")
+    if any(kw in all_text for kw in ["관세", "무역", "트럼프"]) and any(k in " ".join(detect_kws) for k in ["위안", "CNY", "중국"]):
+        items.append("미중 관세 · 무역 협상 동향")
+    if any(kw in all_text for kw in ["PBOC", "고시", "당국"]) and any(k in " ".join(detect_kws) for k in ["위안", "CNY", "재정", "USD/CNY"]):
+        items.append("PBOC 기준환율 고시 방향")
+    if any(kw in all_text for kw in ["WGBI", "채권", "외국인"]) and any(k in " ".join(detect_kws) for k in ["달러", "원"]):
+        items.append("WGBI 편입 · 외국인 채권자금 유입")
+    if any(kw in all_text for kw in ["전쟁", "이란", "중동"]):
+        items.append("이란 전쟁 · 중동 정세 변화")
+    return items[:3] if items else ["주요 지표 확인 필요"]
+
+usd_ind = _currency_indicators(["달러", "USD", "원/달러", "원"])
+cny_ind = _currency_indicators(["위안", "CNY", "중국"])
+cross_ind = _currency_indicators(["위안", "CNY", "재정", "USD/CNY", "PBOC"])
+
+def _ind_html(items):
+    return "<br>".join(f"• {i}" for i in items)
 
 st.markdown(
     f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
@@ -1122,7 +1140,7 @@ st.markdown(
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전망</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">예상 밴드</th>'
-    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">금주 경제지표</th>'
+    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">금주 주요 지표</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">변동 요인</th>'
     f'</tr>'
     # USD/KRW
@@ -1130,7 +1148,7 @@ st.markdown(
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">USD/KRW</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(usd_dir)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{usd_lo:,}~{usd_hi:,}원</td>'
-    f'<td rowspan="3" style="padding:10px;border:1px solid #eee;vertical-align:top;line-height:1.8;">{ind_html}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_ind_html(usd_ind)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(usd_factors)}</td>'
     f'</tr>'
     # CNY/KRW
@@ -1138,6 +1156,7 @@ st.markdown(
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">CNY/KRW</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cny_dir)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cny_lo:,}~{cny_hi:,}원</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_ind_html(cny_ind)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cny_factors)}</td>'
     f'</tr>'
     # USD/CNY
@@ -1145,6 +1164,7 @@ st.markdown(
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">USD/CNY</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cross_dir)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{cross_lo}~{cross_hi}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_ind_html(cross_ind)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cross_factors)}</td>'
     f'</tr>'
     f'</table>',

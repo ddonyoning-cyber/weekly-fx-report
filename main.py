@@ -1332,61 +1332,65 @@ if prev_forecast and not lw_data.empty:
     if review_rows:
         st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
 
-    # 통화별 복기 코멘트 (PDF 이슈 기반)
+    # 통화별 복기 코멘트 (표 형태)
     st.markdown("##### 📝 통화별 복기 코멘트")
 
-    def _review_comment(cur, col, f_lo, f_hi, fmt="krw"):
+    comment_rows = []
+    for cur, col, fmt in [("USD/KRW", "USD_KRW", "krw"), ("CNY/KRW", "CNY_KRW", "krw"), ("USD/CNY", "USD_CNY", "cross")]:
+        if cur not in prev_forecast:
+            continue
+        f_lo, f_hi = prev_forecast[cur]
         a_lo = float(lw_data[col].min())
         a_hi = float(lw_data[col].max())
         a_avg = float(lw_data[col].mean())
 
-        if fmt == "krw":
-            actual_str = f"{a_lo:,.0f}~{a_hi:,.0f}원 (평균 {a_avg:,.2f}원)"
-            forecast_str = f"{int(f_lo):,}~{int(f_hi):,}원"
-        else:
-            actual_str = f"{a_lo:.4f}~{a_hi:.4f} (평균 {a_avg:.4f})"
-            forecast_str = f"{f_lo}~{f_hi}"
-
         if a_hi > f_hi:
-            result = f"예상 상단({forecast_str})을 <b>상회</b>"
+            result = "⬆️ 상단 상회"
         elif a_lo < f_lo:
-            result = f"예상 하단({forecast_str})을 <b>하회</b>"
+            result = "⬇️ 하단 하회"
         else:
-            result = f"예상 범위({forecast_str}) <b>내에서 마감</b>"
+            result = "✅ 범위 내"
 
-        # PDF 키워드 기반 원인 분석
-        cause = ""
+        # PDF 키워드 기반 원인
         if cur == "USD/KRW":
             if "전쟁" in prev_all_text or "이란" in prev_all_text:
-                cause = "<b>이란 전쟁</b> 불확실성과 <b>국제유가 급등</b>이 달러 매수 심리를 자극한 것이 주요 원인."
+                cause = "<b>이란 전쟁</b> 불확실성 · <b>국제유가 급등</b> → 달러 매수 심리 자극"
             elif "종전" in prev_all_text:
-                cause = "<b>종전 기대감</b> 부각으로 위험선호가 회복되며 원화 강세 요인으로 작용."
+                cause = "<b>종전 기대감</b> → 위험선호 회복 → 원화 강세"
             else:
-                cause = "대외 불확실성에 따른 변동성 확대가 주요 원인."
+                cause = "대외 불확실성 → 변동성 확대"
         elif cur == "CNY/KRW":
             if "내수" in prev_all_text or "둔화" in prev_all_text:
-                cause = "중국 <b>내수 둔화</b> 우려로 위안화 약세가 지속되며 원/위안 하방 압력으로 작용."
+                cause = "중국 <b>내수 둔화</b> → 위안화 약세 → 원/위안 하방 압력"
             elif "관세" in prev_all_text:
-                cause = "<b>미중 관세</b> 리스크 재부각이 위안화 절하 압력을 자극."
+                cause = "<b>미중 관세</b> 리스크 → 위안화 절하 압력"
             else:
-                cause = "위안화 프록시 통화인 원화의 동반 움직임이 주요 원인."
-        elif cur == "USD/CNY":
-            if "PBOC" in prev_all_text or "당국" in prev_all_text or "안정" in prev_all_text:
-                cause = "<b>PBOC</b>의 기준환율 고시를 통한 안정적 관리 기조가 변동폭을 제한."
+                cause = "위안화 프록시 원화 동반 움직임"
+        else:
+            if "PBOC" in prev_all_text or "당국" in prev_all_text:
+                cause = "<b>PBOC</b> 기준환율 관리 → 변동폭 제한"
             else:
-                cause = "달러 강세에도 당국 방어 의지로 변동폭 제한적."
+                cause = "당국 방어 의지 → 변동폭 제한적"
 
-        return f"<b>{cur}</b>: 전주 실제 {actual_str}로, {result}. {cause}"
+        comment_rows.append({"cur": cur, "result": result, "cause": cause})
 
-    comments = []
-    for cur, col, fmt in [("USD/KRW", "USD_KRW", "krw"), ("CNY/KRW", "CNY_KRW", "krw"), ("USD/CNY", "USD_CNY", "cross")]:
-        if cur in prev_forecast:
-            f_lo, f_hi = prev_forecast[cur]
-            comments.append(_review_comment(cur, col, f_lo, f_hi, fmt))
-
-    if comments:
+    if comment_rows:
+        rows_html = ""
+        for r in comment_rows:
+            rows_html += (
+                f'<tr>'
+                f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;white-space:nowrap;">{r["cur"]}</td>'
+                f'<td style="padding:10px;border:1px solid #eee;text-align:center;white-space:nowrap;">{r["result"]}</td>'
+                f'<td style="padding:10px;border:1px solid #eee;line-height:1.7;">{r["cause"]}</td>'
+                f'</tr>'
+            )
         st.markdown(
-            '<div class="comment-box">' + "<br><br>".join(comments) + '</div>',
+            f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
+            f'<tr style="background:#f0f4ff;">'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:15%;">통화</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:15%;">결과</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:70%;">주요 원인</th>'
+            f'</tr>{rows_html}</table>',
             unsafe_allow_html=True,
         )
 else:

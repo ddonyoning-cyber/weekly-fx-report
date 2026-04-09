@@ -1105,7 +1105,6 @@ else:
 def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
-st.markdown(
 # 금주 경제지표 정리
 indicators = report.get("indicators", [])
 ind_items = []

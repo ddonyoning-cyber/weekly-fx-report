@@ -1325,26 +1325,29 @@ if prev_forecast and not lw_data.empty:
         else:
             result = "✅ 범위 내"
 
-        # PDF 키워드 기반 원인
-        if cur == "USD/KRW":
-            if "전쟁" in prev_all_text or "이란" in prev_all_text:
-                cause = "<b>이란 전쟁</b> 불확실성 · <b>국제유가 급등</b> → 달러 매수 심리 자극"
-            elif "종전" in prev_all_text:
-                cause = "<b>종전 기대감</b> → 위험선호 회복 → 원화 강세"
-            else:
-                cause = "대외 불확실성 → 변동성 확대"
-        elif cur == "CNY/KRW":
-            if "내수" in prev_all_text or "둔화" in prev_all_text:
-                cause = "중국 <b>내수 둔화</b> → 위안화 약세 → 원/위안 하방 압력"
-            elif "관세" in prev_all_text:
-                cause = "<b>미중 관세</b> 리스크 → 위안화 절하 압력"
-            else:
-                cause = "위안화 프록시 원화 동반 움직임"
+        # 전주 PDF 원문에서 해당 통화 관련 원인 문장 추출
+        detect_map = {
+            "USD/KRW": ["달러", "USD", "원/달러", "환율", "원달러"],
+            "CNY/KRW": ["위안", "CNY", "중국", "원/위안"],
+            "USD/CNY": ["재정", "USD/CNY", "달러/위안", "PBOC", "당국"],
+        }
+        cause_kws = ["때문", "영향", "요인", "자극", "우려", "리스크", "불확실", "압력",
+                     "상승", "하락", "강세", "약세", "확전", "유가", "둔화", "개입", "안정"]
+        prev_sents = [s.strip() for s in prev_all_text.replace("\n", " ").split(".")
+                      if len(s.strip()) > 15]
+
+        related = [s for s in prev_sents
+                   if any(dk in s for dk in detect_map.get(cur, []))
+                   and any(ck in s for ck in cause_kws)]
+
+        # 상위 1문장 추출 (50자 이내로 정리)
+        if related:
+            best = related[0].strip()
+            if len(best) > 50:
+                best = best[:50] + "…"
+            cause = best
         else:
-            if "PBOC" in prev_all_text or "당국" in prev_all_text:
-                cause = "<b>PBOC</b> 기준환율 관리 → 변동폭 제한"
-            else:
-                cause = "당국 방어 의지 → 변동폭 제한적"
+            cause = "변동 요인 추출 불가"
 
         if fmt == "cross":
             fc_str = f"{f_lo}~{f_hi}"

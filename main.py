@@ -1306,33 +1306,7 @@ if "USD/KRW" in prev_forecast and "USD/CNY" in prev_forecast:
     prev_forecast["CNY/KRW"] = (int(round(pu_lo / pc_hi)), int(round(pu_hi / pc_lo)))
 
 if prev_forecast and not lw_data.empty:
-    # 적중 표
-    review_rows = []
-    for cur, col, fmt in [("USD/KRW", "USD_KRW", "krw"), ("CNY/KRW", "CNY_KRW", "krw"), ("USD/CNY", "USD_CNY", "cross")]:
-        if cur not in prev_forecast:
-            continue
-        f_lo, f_hi = prev_forecast[cur]
-        a_lo, a_hi = float(lw_data[col].min()), float(lw_data[col].max())
-        a_avg = float(lw_data[col].mean())
-
-        if a_lo >= f_lo and a_hi <= f_hi:
-            hit = "✅ 범위 내"
-        elif a_hi > f_hi:
-            hit = "⬆️ 상단 이탈"
-        else:
-            hit = "⬇️ 하단 이탈"
-
-        if fmt == "cross":
-            review_rows.append({"통화": cur, "전주 예상": f"{f_lo}~{f_hi}",
-                                "전주 실제(평균)": f"{a_avg:.4f}", "전주 실제(범위)": f"{a_lo:.4f}~{a_hi:.4f}", "적중": hit})
-        else:
-            review_rows.append({"통화": cur, "전주 예상": f"{int(f_lo):,}~{int(f_hi):,}",
-                                "전주 실제(평균)": f"{a_avg:,.2f}", "전주 실제(범위)": f"{a_lo:,.2f}~{a_hi:,.2f}", "적중": hit})
-
-    if review_rows:
-        st.dataframe(pd.DataFrame(review_rows), use_container_width=True, hide_index=True)
-
-    # 통화별 복기 코멘트 (표 형태)
+    # 통화별 복기 코멘트 (통합 표)
     st.markdown("##### 📝 통화별 복기 코멘트")
 
     comment_rows = []
@@ -1372,7 +1346,14 @@ if prev_forecast and not lw_data.empty:
             else:
                 cause = "당국 방어 의지 → 변동폭 제한적"
 
-        comment_rows.append({"cur": cur, "result": result, "cause": cause})
+        if fmt == "cross":
+            fc_str = f"{f_lo}~{f_hi}"
+            act_str = f"{a_avg:.4f} ({a_lo:.4f}~{a_hi:.4f})"
+        else:
+            fc_str = f"{int(f_lo):,}~{int(f_hi):,}"
+            act_str = f"{a_avg:,.2f} ({a_lo:,.2f}~{a_hi:,.2f})"
+
+        comment_rows.append({"cur": cur, "forecast": fc_str, "actual": act_str, "result": result, "cause": cause})
 
     if comment_rows:
         rows_html = ""
@@ -1380,6 +1361,8 @@ if prev_forecast and not lw_data.empty:
             rows_html += (
                 f'<tr>'
                 f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;white-space:nowrap;">{r["cur"]}</td>'
+                f'<td style="padding:10px;border:1px solid #eee;text-align:center;white-space:nowrap;">{r["forecast"]}</td>'
+                f'<td style="padding:10px;border:1px solid #eee;text-align:center;white-space:nowrap;">{r["actual"]}</td>'
                 f'<td style="padding:10px;border:1px solid #eee;text-align:center;white-space:nowrap;">{r["result"]}</td>'
                 f'<td style="padding:10px;border:1px solid #eee;line-height:1.7;">{r["cause"]}</td>'
                 f'</tr>'
@@ -1387,9 +1370,11 @@ if prev_forecast and not lw_data.empty:
         st.markdown(
             f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
             f'<tr style="background:#f0f4ff;">'
-            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:15%;">통화</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:15%;">결과</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;width:70%;">주요 원인</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전주 전망</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전주 실제(평균/범위)</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">결과</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">주요 원인</th>'
             f'</tr>{rows_html}</table>',
             unsafe_allow_html=True,
         )

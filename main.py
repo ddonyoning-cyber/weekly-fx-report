@@ -1106,7 +1106,7 @@ def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
 st.markdown(
-    f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;table-layout:auto;">'
+    f'<table style="width:auto;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
     f'<tr style="background:#f0f4ff;">'
     f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;white-space:nowrap;">통화</th>'
     f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;white-space:nowrap;">전망</th>'

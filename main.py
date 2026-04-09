@@ -949,19 +949,57 @@ h["보유환율"] = book
 h["금일 매매기준율"] = mkt
 h["외환차손익(원)"] = pnl
 
-# 표시용 포맷
-h_disp = h.copy()
-h_disp["보유금액"] = h_disp["보유금액"].apply(lambda x: f"{x:,.0f}")
-h_disp["보유환율"] = h_disp["보유환율"].apply(lambda x: f"{x:,.2f}")
-h_disp["금일 매매기준율"] = h_disp["금일 매매기준율"].apply(lambda x: f"{x:,.2f}")
-h_disp["외환차손익(원)"] = h["외환차손익(원)"].apply(lambda x: f"{x:+,.0f}")
+# 원화환산금액 계산
+book_krw = [a * b for a, b in zip(amt, book)]   # 장부 기준
+mkt_krw = [a * m for a, m in zip(amt, mkt)]     # 당일 기준
+currencies = h["통화"].tolist()
 
-st.dataframe(h_disp, use_container_width=True, hide_index=True)
+rows_html = ""
+for i in range(len(currencies)):
+    p = pnl[i]
+    pc = "#C00000" if p > 0 else "#4A90D9"
+    rows_html += (
+        f'<tr>'
+        f'<td>{latest_date}</td>'
+        f'<td>{currencies[i]}</td>'
+        f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
+        f'<td style="text-align:right;">{book[i]:,.2f}</td>'
+        f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
+        f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
+        f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
+        f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td>'
+        f'</tr>'
+    )
 
-total_pnl = h["외환차손익(원)"].sum()
-pnl_color = "#C00000" if total_pnl > 0 else "#4A90D9"
-st.markdown(f'<div style="text-align:right;font-size:1.1rem;font-weight:700;color:{pnl_color};">'
-            f'총 외환차손익: {total_pnl:+,.0f}원</div>', unsafe_allow_html=True)
+total_pnl = sum(pnl)
+tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
+
+st.markdown(
+    f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:8px;">'
+    # 헤더 1행
+    f'<tr style="background:#f0f4ff;text-align:center;">'
+    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
+    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
+    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
+    f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
+    f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
+    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
+    f'</tr>'
+    # 헤더 2행
+    f'<tr style="background:#f0f4ff;text-align:center;">'
+    f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
+    f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+    f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+    f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+    f'</tr>'
+    # 데이터
+    f'{rows_html}'
+    f'</table>'
+    # 합계
+    f'<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">'
+    f'현재기준 외환차손익 : {total_pnl:+,.0f}원</div>',
+    unsafe_allow_html=True,
+)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

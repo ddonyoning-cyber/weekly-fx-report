@@ -1111,7 +1111,7 @@ st.markdown(
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전망</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">예상 밴드</th>'
-    f'<th style="padding:10px;border:1px solid #ddd;text-align:left;">변동 요인</th>'
+    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">변동 요인</th>'
     f'</tr>'
     # USD/KRW
     f'<tr>'

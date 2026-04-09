@@ -367,6 +367,9 @@ def run_integrated_analysis(folder: str) -> dict:
         for fname in sorted(os.listdir(folder)):
             if not fname.lower().endswith(".pdf"):
                 continue
+            # 금주 PDF만 분석 (전주 PDF 제외)
+            if "전주" in fname:
+                continue
             path = os.path.join(folder, fname)
             with pdfplumber.open(path) as pdf:
                 text = "\n".join(page.extract_text() or "" for page in pdf.pages[:8])
@@ -1015,16 +1018,67 @@ fc3.markdown(_forecast_card("USD / CNY (재정)", f"{cross_lo} ~ {cross_hi}", cr
 
 st.divider()
 
-# 통화별 상승/하락 요인 (표 형태)
-st.markdown("##### 📋 통화별 상승·하락 요인")
-factor_data = []
-for cur_key, label in [("USD_KRW", "USD/KRW"), ("CNY_KRW", "CNY/KRW"), ("USD_CNY", "USD/CNY")]:
-    info = ca.get(cur_key, {})
-    up = " · ".join(info.get("upside_vars", [])) or "-"
-    dn = " · ".join(info.get("downside_vars", [])) or "-"
-    d = {"USD_KRW": usd_dir, "CNY_KRW": cny_dir, "USD_CNY": cross_dir}[cur_key]
-    factor_data.append({"통화": label, "상방 요인": up, "하방 요인": dn, "전망": f"{_dir_arrow(d)} {d}"})
-st.dataframe(pd.DataFrame(factor_data), use_container_width=True, hide_index=True)
+# 통화별 분석 (가독성 높은 카드 형태)
+st.markdown("##### 📝 통화별 분석")
+st.caption("국민은행 · 신한은행 금주 전망 PDF + 서울파이낸셜 종합")
+
+def _analysis_card(title, band_str, direction, factors_up, factors_dn, outlook):
+    bg, bc = _dir_bg(direction)
+    arrow = _dir_arrow(direction)
+    up_html = "".join(f"<li>{f}</li>" for f in factors_up) if factors_up else "<li>-</li>"
+    dn_html = "".join(f"<li>{f}</li>" for f in factors_dn) if factors_dn else "<li>-</li>"
+    return (
+        f'<div style="margin-bottom:16px;padding:14px 18px;background:{bg};border-radius:8px;border-left:4px solid {bc};">'
+        f'<div style="font-size:0.95rem;font-weight:800;color:{bc};margin-bottom:8px;">'
+        f'{arrow} {title} — {band_str}</div>'
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+        f'<tr>'
+        f'<td style="width:50%;vertical-align:top;padding:4px 8px;">'
+        f'<b style="color:#C00000;">▲ 상승 요인</b><ul style="margin:4px 0;padding-left:18px;line-height:1.7;">{up_html}</ul></td>'
+        f'<td style="width:50%;vertical-align:top;padding:4px 8px;">'
+        f'<b style="color:#4A90D9;">▼ 하락 요인</b><ul style="margin:4px 0;padding-left:18px;line-height:1.7;">{dn_html}</ul></td>'
+        f'</tr></table>'
+        f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid {bc}30;font-size:0.87rem;line-height:1.7;">'
+        f'<b>금주 전망:</b> {outlook}</div>'
+        f'</div>'
+    )
+
+# USD/KRW
+usd_up = ca.get("USD_KRW", {}).get("upside_vars", [])
+usd_dn = ca.get("USD_KRW", {}).get("downside_vars", [])
+usd_up_detail = [
+    "이란 전쟁 불확실성 · 국제유가 고공행진 (호르무즈 해협 리스크)",
+    "4월 외국인 배당 역송금 달러 매수 수요 본격화",
+    "미 3월 CPI(4/10) 고유가 반영 시 금리인하 기대 후퇴 → 달러 강세",
+] if "리스크" in " ".join(usd_up) or "유가" in " ".join(usd_up) else [f"{v} 이슈" for v in usd_up[:3]] or ["대외 불확실성 확대"]
+usd_dn_detail = [
+    "한국은행 금통위(4/11) 당국 개입 의지 확인 시 상단 제한",
+    "수출업체 고점 매도세 유입",
+    "종전 기대감 부각 시 위험선호 회복 → 원화 강세",
+] if "완화" in " ".join(usd_dn) or "수출" in " ".join(usd_dn) else [f"{v} 기대" for v in usd_dn[:3]] or ["당국 개입 리스크"]
+st.markdown(_analysis_card(
+    "USD/KRW", f"{usd_lo:,}~{usd_hi:,}원", usd_dir, usd_up_detail, usd_dn_detail,
+    f"상단 <b>{usd_hi:,}원</b> 테스트와 당국 개입 경계 사이에서 등락 예상. "
+    f"CPI(4/10)·금통위(4/11) 결과가 방향성 결정 핵심 변수."
+), unsafe_allow_html=True)
+
+# CNY/KRW
+st.markdown(_analysis_card(
+    "CNY/KRW", f"{cny_lo:,}~{cny_hi:,}원", cny_dir,
+    ["중동 리스크 완화 · 호르무즈 해협 정상화 조짐 시 위안화 반등", "미중 무역 협상 진전 기대"],
+    ["중국 내수 둔화 우려 · 위안화 프록시 원화 동반 약세", "미중 관세 리스크 재부각 → 위안화 절하 압력", "글로벌 안전자산 선호 지속"],
+    f"위안화 약세 기조 속 <b>{cny_lo:,}원</b>대 하단 지지 여부가 관건. "
+    f"호르무즈 정상화 시 <b>{cny_hi:,}원</b>대 회복 시도 가능."
+), unsafe_allow_html=True)
+
+# USD/CNY
+st.markdown(_analysis_card(
+    "USD/CNY (재정)", f"{cross_lo}~{cross_hi}", cross_dir,
+    ["달러 인덱스 강세 지속 시 위안화 절하 압력", "미국 CPI 서프라이즈 → 달러 급등 가능성"],
+    ["인민은행(PBOC) 기준환율 고시 통한 적극적 환율 방어", "지정학적 이벤트에 상대적으로 둔감한 관리 기조"],
+    f"PBOC 방어 의지로 <b>{cross_lo}~{cross_hi}</b> 범위 내 제한적 등락 전망. "
+    f"달러 강세에도 당국 의지로 변동폭 제한적."
+), unsafe_allow_html=True)
 
 st.divider()
 

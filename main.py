@@ -1325,29 +1325,35 @@ if prev_forecast and not lw_data.empty:
         else:
             result = "✅ 범위 내"
 
-        # 전주 PDF 원문에서 해당 통화 관련 원인 문장 추출
-        detect_map = {
-            "USD/KRW": ["달러", "USD", "원/달러", "환율", "원달러"],
-            "CNY/KRW": ["위안", "CNY", "중국", "원/위안"],
-            "USD/CNY": ["재정", "USD/CNY", "달러/위안", "PBOC", "당국"],
-        }
-        cause_kws = ["때문", "영향", "요인", "자극", "우려", "리스크", "불확실", "압력",
-                     "상승", "하락", "강세", "약세", "확전", "유가", "둔화", "개입", "안정"]
-        prev_sents = [s.strip() for s in prev_all_text.replace("\n", " ").split(".")
-                      if len(s.strip()) > 15]
+        # 전주 PDF 키워드 기반 원인 분석
+        def _pc(kw): return kw in prev_all_text
 
-        related = [s for s in prev_sents
-                   if any(dk in s for dk in detect_map.get(cur, []))
-                   and any(ck in s for ck in cause_kws)]
+        causes = []
+        if cur == "USD/KRW":
+            if _pc("전쟁") or _pc("이란") or _pc("중동"):
+                causes.append("<b>이란 전쟁</b> 불확실성 → 위험회피 심리 → 달러 매수 자극")
+            if _pc("유가"):
+                causes.append("<b>국제유가</b> 고공행진 → 경상수지 악화 우려 → 원화 약세 압력")
+            if _pc("CPI") or _pc("물가"):
+                causes.append("미 CPI 고유가 반영 → <b>금리인하 기대 후퇴</b>")
+            if _pc("금통위") or _pc("한국은행"):
+                causes.append("한은 <b>금통위</b> 당국 경계 발언 → 상단 제한 변수")
+            if _pc("종전") or _pc("휴전"):
+                causes.append("<b>종전 기대감</b> → 위험선호 회복 → 원화 강세 요인")
+        elif cur == "CNY/KRW":
+            if _pc("내수") or _pc("둔화") or _pc("부진"):
+                causes.append("중국 <b>내수 둔화</b> → 위안화 약세 → 원/위안 하방 압력")
+            if _pc("관세") or _pc("무역"):
+                causes.append("<b>미중 관세</b> 리스크 → 위안화 절하 압력")
+            if _pc("유가") or _pc("안전자산"):
+                causes.append("<b>고유가</b> → 안전자산 선호 → 위안화 프록시 원화 동반 약세")
+        elif cur == "USD/CNY":
+            if _pc("둔감") or _pc("안정"):
+                causes.append("지정학적 이벤트에 <b>둔감</b>, PBOC 안정적 관리 기조 유지")
+            if _pc("PBOC") or _pc("당국") or _pc("고시"):
+                causes.append("<b>PBOC</b> 기준환율 고시 → 위안화 급락 방어 의지")
 
-        # 상위 1문장 추출 (50자 이내로 정리)
-        if related:
-            best = related[0].strip()
-            if len(best) > 50:
-                best = best[:50] + "…"
-            cause = best
-        else:
-            cause = "변동 요인 추출 불가"
+        cause = "<br>".join(f"• {c}" for c in causes) if causes else "• 변동 요인 미감지"
 
         if fmt == "cross":
             fc_str = f"{f_lo}~{f_hi}"

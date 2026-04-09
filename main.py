@@ -1105,29 +1105,51 @@ else:
 def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
+# 전망 셀: 방향 + 변동금액 + 변동%
+avg_lw = stats["avg_lw"]
+
+def _outlook_cell(direction, band_lo, band_hi, prev_avg, fmt="krw"):
+    mid = (band_lo + band_hi) / 2
+    diff = mid - prev_avg
+    pct = diff / prev_avg * 100 if prev_avg else 0
+    color = _dir_color(direction)
+    arrow = _dir_arrow(direction)
+    if fmt == "krw":
+        diff_str = f"{diff:+,.1f}원"
+    else:
+        diff_str = f"{diff:+.4f}"
+    return (
+        f'{arrow} <b>{direction}</b><br>'
+        f'<span style="font-size:0.8rem;color:{color};">{diff_str} ({pct:+.2f}%)</span>'
+    )
+
+usd_outlook = _outlook_cell(usd_dir, usd_lo, usd_hi, avg_lw["USD_KRW"])
+cny_outlook = _outlook_cell(cny_dir, cny_lo, cny_hi, avg_lw["CNY_KRW"])
+cross_outlook = _outlook_cell(cross_dir, cross_lo, cross_hi, avg_lw["USD_CNY"], fmt="cross")
+
 st.markdown(
     f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
     f'<tr style="background:#f0f4ff;">'
-    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:18%;">통화</th>'
-    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:15%;">전망</th>'
-    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:22%;">예상 밴드</th>'
-    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:45%;">변동 요인</th>'
+    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:12%;">통화</th>'
+    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:18%;">전망</th>'
+    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:18%;">예상 밴드</th>'
+    f'<th style="padding:10px 14px;border:1px solid #ddd;text-align:center;width:52%;">변동 요인</th>'
     f'</tr>'
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;white-space:nowrap;">USD/KRW</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(usd_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;color:{_dir_color(usd_dir)};">{usd_outlook}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;white-space:nowrap;">{usd_lo:,}~{usd_hi:,}원</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(usd_factors)}</td>'
     f'</tr>'
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;white-space:nowrap;">CNY/KRW</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cny_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;color:{_dir_color(cny_dir)};">{cny_outlook}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;white-space:nowrap;">{cny_lo:,}~{cny_hi:,}원</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cny_factors)}</td>'
     f'</tr>'
     f'<tr>'
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;white-space:nowrap;">USD/CNY</td>'
-    f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(cross_dir)}</td>'
+    f'<td style="padding:10px;border:1px solid #eee;text-align:center;color:{_dir_color(cross_dir)};">{cross_outlook}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;white-space:nowrap;">{cross_lo}~{cross_hi}</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(cross_factors)}</td>'
     f'</tr>'

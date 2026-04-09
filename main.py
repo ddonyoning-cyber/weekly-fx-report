@@ -1106,11 +1106,24 @@ def _factor_html(factors):
     return "<br>".join(f"• {f}" for f in factors)
 
 st.markdown(
+# 금주 경제지표 정리
+indicators = report.get("indicators", [])
+ind_items = []
+for ind in indicators[:4]:
+    d = ind["date"] if ind["date"] != "미정" else ""
+    if d:
+        ind_items.append(f'{d} {ind["name"]}')
+    else:
+        ind_items.append(ind["name"])
+ind_html = "<br>".join(f"• {item}" for item in ind_items) if ind_items else "• 주요 지표 없음"
+
+st.markdown(
     f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
     f'<tr style="background:#f0f4ff;">'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전망</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">예상 밴드</th>'
+    f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">금주 경제지표</th>'
     f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">변동 요인</th>'
     f'</tr>'
     # USD/KRW
@@ -1118,6 +1131,7 @@ st.markdown(
     f'<td style="padding:10px;border:1px solid #eee;font-weight:700;text-align:center;">USD/KRW</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;">{_dir_badge(usd_dir)}</td>'
     f'<td style="padding:10px;border:1px solid #eee;text-align:center;font-weight:600;">{usd_lo:,}~{usd_hi:,}원</td>'
+    f'<td rowspan="3" style="padding:10px;border:1px solid #eee;vertical-align:top;line-height:1.8;">{ind_html}</td>'
     f'<td style="padding:10px;border:1px solid #eee;line-height:1.8;">{_factor_html(usd_factors)}</td>'
     f'</tr>'
     # CNY/KRW

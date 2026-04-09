@@ -995,56 +995,21 @@ def _run_simulator():
 
     usd_rate = float(latest["USD_KRW"])
 
-    sc1, sc2, sc3 = st.columns(3)
-    with sc1:
-        sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
-    with sc2:
-        sim_pct = st.selectbox("환전 비율", ["30%", "50%", "70%", "100%"], index=3)
-        pct_val = int(sim_pct.replace("%", "")) / 100
-        sim_cny_actual = sim_cny * pct_val
-    with sc3:
-        if sim_target == "KRW":
-            rate_list = list(range(int(cny_lo), int(cny_hi) + 1))
-            cur_rate = round(float(latest["CNY_KRW"]))
-            if cur_rate not in rate_list:
-                rate_list.append(cur_rate)
-                rate_list.sort()
-            rate_labels = []
-            for rv in rate_list:
-                if rv == int(cny_lo):
-                    rate_labels.append(f"{rv}원 (밴드 하단)")
-                elif rv == int(cny_hi):
-                    rate_labels.append(f"{rv}원 (밴드 상단)")
-                elif rv == cur_rate:
-                    rate_labels.append(f"{rv}원 (현재 매매기준율)")
-                else:
-                    rate_labels.append(f"{rv}원")
-            rate_list_f = [float(x) for x in rate_list]
-        else:
-            # CNY→USD: USD/CNY(재정환율) 밴드 0.01 단위
-            rate_list_f = []
-            r = float(cross_lo)
-            while r <= float(cross_hi) + 0.005:
-                rate_list_f.append(round(r, 2))
-                r += 0.01
-            cur_rate = round(float(latest["USD_CNY"]), 2)
-            if cur_rate not in rate_list_f:
-                rate_list_f.append(cur_rate)
-                rate_list_f.sort()
-            rate_labels = []
-            for rv in rate_list_f:
-                if rv == float(cross_lo):
-                    rate_labels.append(f"{rv:.2f} (밴드 하단)")
-                elif rv == float(cross_hi):
-                    rate_labels.append(f"{rv:.2f} (밴드 상단)")
-                elif rv == cur_rate:
-                    rate_labels.append(f"{rv:.2f} (현재 재정환율)")
-                else:
-                    rate_labels.append(f"{rv:.2f}")
+    sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True)
 
-        default_idx = next((i for i, lb in enumerate(rate_labels) if "현재" in lb), 0)
-        selected = st.selectbox("적용 환율 선택", rate_labels, index=default_idx)
-        sim_rate = rate_list_f[rate_labels.index(selected)]
+    sl1, sl2 = st.columns(2)
+    with sl1:
+        pct_val = st.slider("환전 비율", min_value=10, max_value=100, value=100, step=10, format="%d%%") / 100
+        sim_cny_actual = sim_cny * pct_val
+    with sl2:
+        if sim_target == "KRW":
+            sim_rate = st.slider("적용 환율 (CNY/KRW)",
+                                 min_value=float(cny_lo), max_value=float(cny_hi),
+                                 value=round(float(latest["CNY_KRW"]), 1), step=0.1, format="%.1f원")
+        else:
+            sim_rate = st.slider("적용 재정환율 (USD/CNY)",
+                                 min_value=float(cross_lo), max_value=float(cross_hi),
+                                 value=round(float(latest["USD_CNY"]), 2), step=0.01, format="%.2f")
 
     if sim_target == "KRW":
         sim_krw = sim_cny_actual * sim_rate

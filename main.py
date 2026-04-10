@@ -1366,7 +1366,7 @@ if prev_forecast and not lw_data.empty:
             f'<tr style="background:#f0f4ff;">'
             f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">통화</th>'
             f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전주 전망</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전주 실제(평균/범위)</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">전주 실적(평균/범위)</th>'
             f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">결과</th>'
             f'<th style="padding:10px;border:1px solid #ddd;text-align:center;">주요 원인</th>'
             f'</tr>{rows_html}</table>',

@@ -14,6 +14,7 @@ import os
 
 # ─── 고정 설정 ──────────────────────────────────────────
 BOK_API_KEY = st.secrets.get("BOK_API_KEY", os.environ.get("BOK_API_KEY", ""))
+ANTHROPIC_API_KEY = st.secrets.get("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", ""))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data", "data_apr_w2")
 
@@ -307,6 +308,79 @@ def search_external_research() -> list[dict]:
             continue
 
     return results
+
+
+# ═══════════════════════════════════════════════════════
+# Claude API PDF 분석
+# ═══════════════════════════════════════════════════════
+@st.cache_data(ttl=86400, show_spinner=False)
+def analyze_pdfs_with_claude(folder: str, week_type: str = "금주") -> dict:
+    """Claude API로 PDF 통화별 변동요인을 분석한다.
+    week_type: '금주' 또는 '전주'
+    반환: {'USD/KRW': [요인1, 요인2, 요인3], 'CNY/KRW': [...], 'USD/CNY': [...]}
+    """
+    if not ANTHROPIC_API_KEY or not os.path.isdir(folder):
+        return {}
+
+    # 해당 주차 PDF 텍스트 수집
+    pdf_texts = []
+    for fname in sorted(os.listdir(folder)):
+        if not fname.endswith(".pdf") or week_type not in fname:
+            continue
+        path = os.path.join(folder, fname)
+        try:
+            with pdfplumber.open(path) as pdf:
+                text = "\n".join(p.extract_text() or "" for p in pdf.pages[:6])
+            src = "국민은행" if "국민" in fname else ("신한은행" if "신한" in fname else fname)
+            pdf_texts.append(f"=== {src} ===\n{text[:3000]}")
+        except Exception:
+            continue
+
+    if not pdf_texts:
+        return {}
+
+    combined = "\n\n".join(pdf_texts)
+
+    prompt = f"""다음은 은행 외환 전망 리포트입니다. 이를 분석하여 각 통화별 변동 요인을 정리해주세요.
+
+[리포트 내용]
+{combined}
+
+[요청사항]
+USD/KRW, CNY/KRW, USD/CNY(재정환율) 각 통화에 대해 주요 변동 요인 3가지씩을 다음 형식으로 작성해주세요:
+
+- 각 요인은 "원인 → 메커니즘 → 결과" 형식의 짧은 한 문장 (40자 이내)
+- 핵심 키워드는 **굵게** 표시 (HTML <b> 태그 사용)
+- 인과관계가 명확하게 보이도록 작성
+
+JSON 형식으로 정확히 응답해주세요:
+{{
+  "USD/KRW": ["요인1", "요인2", "요인3"],
+  "CNY/KRW": ["요인1", "요인2", "요인3"],
+  "USD/CNY": ["요인1", "요인2", "요인3"]
+}}
+JSON만 출력하고 다른 설명은 하지 마세요."""
+
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+        # JSON 추출
+        import json as _json
+        # ```json ... ``` 마크다운 제거
+        if "```" in raw:
+            raw = re.sub(r'```(?:json)?\s*', '', raw)
+            raw = raw.replace("```", "").strip()
+        result = _json.loads(raw)
+        return result
+    except Exception as e:
+        st.warning(f"Claude API 분석 실패: {e}")
+        return {}
 
 
 # ═══════════════════════════════════════════════════════
@@ -1027,79 +1101,13 @@ def _dir_badge(d):
     a = _dir_arrow(d)
     return f'<span style="color:{c};font-weight:700;">{a} {d}</span>'
 
-# PDF 키워드 기반 변동요인 요약 생성
-all_s = report.get("all_sentences", [])
-all_text = " ".join(all_s)
+# Claude API로 금주 PDF 분석
+with st.spinner("Claude AI가 금주 PDF를 분석하는 중..."):
+    claude_factors = analyze_pdfs_with_claude(DATA_DIR, week_type="금주")
 
-def _check(kw): return kw in all_text
-
-# USD/KRW 변동요인
-if usd_dir == "상승":
-    usd_factors = []
-    if _check("전쟁") or _check("이란") or _check("중동"):
-        usd_factors.append("<b>이란 전쟁</b> 불확실성 → 위험회피 심리 → <b>달러 매수</b> 자극")
-    if _check("유가"):
-        usd_factors.append("<b>국제유가</b> 고공행진 → 경상수지 악화 우려 → <b>원화 약세</b> 압력")
-    if _check("CPI") or _check("물가") or _check("인플레"):
-        usd_factors.append("미 3월 <b>CPI</b>(4/10) 고유가 반영 시 → <b>금리인하 기대 후퇴</b>")
-    if _check("금통위") or _check("한국은행"):
-        usd_factors.append("한은 <b>금통위</b>(4/11) 당국 경계 발언 여부가 <b>상단 제한</b> 변수")
-    if not usd_factors:
-        usd_factors = ["<b>대외 불확실성</b> 확대 → 달러 강세 기조 지속"]
-elif usd_dir == "하락":
-    usd_factors = []
-    if _check("종전") or _check("휴전"):
-        usd_factors.append("<b>종전·휴전</b> 기대감 → 위험선호 회복 → <b>원화 강세</b> 전환")
-    if _check("매도") or _check("수출"):
-        usd_factors.append("<b>수출업체</b> 고점 네고 매도세 유입 → 환율 <b>하방 압력</b>")
-    if _check("개입"):
-        usd_factors.append("<b>외환당국</b> 스무딩 오퍼레이션 → <b>상단 제한</b>")
-    if not usd_factors:
-        usd_factors = ["원화 강세 요인 우세 → <b>하방 테스트</b> 전망"]
-else:
-    usd_factors = ["상방·하방 요인 혼재 → <b>박스권</b> 등락 예상"]
-
-# CNY/KRW 변동요인
-if cny_dir == "하락":
-    cny_factors = []
-    if _check("내수") or _check("둔화") or _check("부진"):
-        cny_factors.append("중국 <b>내수 둔화</b> → <b>위안화 약세</b> → 원/위안 하방 압력")
-    if _check("관세") or _check("무역"):
-        cny_factors.append("<b>미중 관세</b> 리스크 재부각 → <b>위안화 절하</b> 압력")
-    if _check("유가") or _check("안전자산"):
-        cny_factors.append("<b>고유가</b> → 안전자산 선호 → 위안화 프록시 <b>원화 동반 약세</b>")
-    if not cny_factors:
-        cny_factors = ["<b>위안화 약세</b> 기조 지속 → CNY/KRW 하방 압력"]
-elif cny_dir == "상승":
-    cny_factors = []
-    if _check("회복") or _check("반등"):
-        cny_factors.append("중국 <b>경기 회복</b> 기대 → <b>위안화 반등</b> → CNY/KRW 상승")
-    if _check("호르무즈") or _check("종전"):
-        cny_factors.append("<b>호르무즈</b> 정상화 조짐 → 위험선호 회복 → <b>위안화 강세</b>")
-    if not cny_factors:
-        cny_factors = ["<b>위안화 반등</b> 기대 → CNY/KRW 상방 시도"]
-else:
-    cny_factors = ["위안화 방향성 혼조 → <b>제한적 등락</b>"]
-
-# USD/CNY 변동요인
-if cross_dir == "하락":
-    cross_factors = []
-    if _check("둔감") or _check("안정"):
-        cross_factors.append("지정학적 이벤트에 <b>둔감</b>, <b>PBOC</b> 안정적 관리 기조 유지")
-    if _check("PBOC") or _check("당국"):
-        cross_factors.append("<b>PBOC</b> 기준환율 고시 → <b>위안화 급락 방어</b> 의지")
-    if not cross_factors:
-        cross_factors = ["<b>PBOC</b> 환율 방어 → 재정환율 안정"]
-elif cross_dir == "상승":
-    cross_factors = []
-    if _check("달러") and _check("강세"):
-        cross_factors.append("<b>달러 인덱스</b> 강세 → <b>위안화 절하</b> 압력 → 재정환율 상승")
-    if _check("유가"):
-        cross_factors.append("<b>고유가</b> → 달러 선호 → <b>USD/CNY 상방</b>")
-    if not cross_factors:
-        cross_factors = ["<b>달러 강세</b> → 위안 절하 압력"]
-else:
-    cross_factors = ["<b>PBOC</b> 방어 vs <b>달러 강세</b> 균형 → <b>보합</b>"]
+usd_factors = claude_factors.get("USD/KRW", ["분석 데이터 없음"])
+cny_factors = claude_factors.get("CNY/KRW", ["분석 데이터 없음"])
+cross_factors = claude_factors.get("USD/CNY", ["분석 데이터 없음"])
 
 # 표 생성
 def _factor_html(factors):
@@ -1306,8 +1314,11 @@ if "USD/KRW" in prev_forecast and "USD/CNY" in prev_forecast:
     prev_forecast["CNY/KRW"] = (int(round(pu_lo / pc_hi)), int(round(pu_hi / pc_lo)))
 
 if prev_forecast and not lw_data.empty:
-    # 통화별 복기 코멘트 (통합 표)
+    # 통화별 복기 코멘트 (Claude 분석)
     st.markdown("##### 📝 통화별 복기 코멘트")
+
+    with st.spinner("Claude AI가 전주 PDF를 분석하는 중..."):
+        prev_claude_factors = analyze_pdfs_with_claude(DATA_DIR, week_type="전주")
 
     comment_rows = []
     for cur, col, fmt in [("USD/KRW", "USD_KRW", "krw"), ("CNY/KRW", "CNY_KRW", "krw"), ("USD/CNY", "USD_CNY", "cross")]:
@@ -1325,39 +1336,9 @@ if prev_forecast and not lw_data.empty:
         else:
             result = "✅ 범위 내"
 
-        # 전주 PDF 원문에서 해당 통화 관련 핵심 문장 추출 → 짧게 정리
-        detect_map = {
-            "USD/KRW": ["달러", "USD", "원/달러", "환율", "원달러"],
-            "CNY/KRW": ["위안", "CNY", "중국", "원/위안"],
-            "USD/CNY": ["재정", "USD/CNY", "달러/위안", "PBOC", "당국"],
-        }
-        factor_kws = ["전망", "예상", "상방", "하방", "우세", "압력", "자극", "제한",
-                      "리스크", "유가", "개입", "요인", "불확실", "약세", "강세",
-                      "상승", "하락", "둔화", "확전", "장기화", "안정"]
-        prev_sents = [s.strip() for s in prev_all_text.replace("\n", " ").split(".")
-                      if len(s.strip()) > 20]
-
-        related = []
-        for s in prev_sents:
-            if not any(dk in s for dk in detect_map.get(cur, [])):
-                continue
-            if not any(fk in s for fk in factor_kws):
-                continue
-            # 깨진 텍스트 필터
-            import re as _re
-            clean_ratio = len(_re.findall(r'[가-힣a-zA-Z0-9\s,.%()~·\-/]', s)) / max(len(s), 1)
-            if clean_ratio < 0.7:
-                continue
-            # 40자로 요약
-            short = s.strip()
-            if len(short) > 45:
-                short = short[:45] + "…"
-            if short not in related:
-                related.append(short)
-            if len(related) >= 3:
-                break
-
-        cause = "<br>".join(f"• {r}" for r in related) if related else "• 변동 요인 추출 불가"
+        # Claude가 분석한 전주 변동요인
+        prev_factors = prev_claude_factors.get(cur, ["분석 데이터 없음"])
+        cause = "<br>".join(f"• {f}" for f in prev_factors)
 
         if fmt == "cross":
             fc_str = f"{f_lo}~{f_hi}"

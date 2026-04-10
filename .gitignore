@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+.env
 chart.png
 *.xlsx

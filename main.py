@@ -1320,8 +1320,7 @@ c2.metric("CNY/KRW (전주 평균)", f"{stats['avg_lw']['CNY_KRW']:,.2f} 원",
 c3.metric("USD/CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
           delta=f"{stats['cross_vs_pw']:+.2f}% ({cross_diff:+.4f})", delta_color="inverse")
 
-# 전주 복기: 전망 vs 실제
-st.markdown("##### 🔍 전주 복기 — 전망 vs 실제")
+# 전주 복기: 전망 vs 실적
 
 # 전주 PDF에서 밴드 추출 (국민은행 전주 전망)
 prev_forecast = {}
@@ -1351,7 +1350,7 @@ if "USD/KRW" in prev_forecast and "USD/CNY" in prev_forecast:
 
 if prev_forecast and not lw_data.empty:
     # 통화별 복기 코멘트 (Claude 분석)
-    st.markdown("##### 📝 통화별 복기 코멘트")
+    st.markdown("##### 📝 통화별 분석")
 
     with st.spinner("Claude AI가 전주 PDF를 분석하는 중..."):
         prev_claude_factors = analyze_pdfs_with_claude(DATA_DIR, week_type="전주")

@@ -1444,7 +1444,7 @@ else:
 
 # ── HTML 리포트 다운로드 ──
 def _gen_html():
-    chart_html = build_chart(df).to_html(include_plotlyjs="cdn", full_html=False)
+    chart_html = build_chart(df, events=_chart_events).to_html(include_plotlyjs="cdn", full_html=False)
 
     # 보유현황 테이블
     hold_rows = ""

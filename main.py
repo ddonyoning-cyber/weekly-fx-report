@@ -1428,6 +1428,99 @@ else:
 
 
 
-# ── 푸터 ──
+# ── HTML 리포트 다운로드 ──
+def _gen_html():
+    chart_html = build_chart(df).to_html(include_plotlyjs="cdn", full_html=False)
+
+    # 보유현황 테이블
+    hold_rows = ""
+    for i in range(len(currencies)):
+        p = pnl[i]
+        pc = "#C00000" if p > 0 else "#4A90D9"
+        hold_rows += (
+            f'<tr><td>{latest_date}</td><td>{currencies[i]}</td>'
+            f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{book[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
+            f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
+            f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td></tr>'
+        )
+    tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
+
+    # 전망 밴드
+    def _hdir(d):
+        c = {"상승":"#C00000","하락":"#4A90D9"}.get(d,"#2E8B57")
+        a = {"상승":"↑","하락":"↓"}.get(d,"→")
+        return f'<span style="color:{c};font-weight:700;">{a} {d}</span>'
+
+    # 변동요인
+    usd_f = "<br>".join(f"• {f}" for f in usd_factors)
+    cny_f = "<br>".join(f"• {f}" for f in cny_factors)
+    cross_f = "<br>".join(f"• {f}" for f in cross_factors)
+
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<title>주간 환율 리포트 — 2026년 4월 2주차</title>
+<style>
+body{{font-family:'Malgun Gothic',sans-serif;margin:0;padding:20px 40px;color:#222;background:#fff;}}
+h2{{margin-bottom:4px;}} .cap{{font-size:0.8rem;color:#888;margin-bottom:16px;}}
+.sh{{background:linear-gradient(90deg,#2E75B6,#4a90d9);color:white;padding:10px 20px;border-radius:8px;font-size:1.1rem;font-weight:700;margin:24px 0 12px;}}
+table{{width:100%;border-collapse:collapse;font-size:0.88rem;margin:8px 0;}}
+th{{background:#f0f4ff;padding:8px 10px;text-align:center;border:1px solid #ddd;font-weight:700;}}
+td{{padding:8px 10px;border:1px solid #eee;}}
+.mc{{display:flex;gap:16px;margin:12px 0;}}
+.mc>div{{flex:1;background:linear-gradient(135deg,#667eea08,#764ba208);border:1px solid #ddd;border-radius:12px;padding:16px 20px;}}
+.mc .lb{{font-size:0.82rem;color:#555;}} .mc .vl{{font-size:1.8rem;font-weight:700;margin:4px 0;}}
+.ft{{font-size:0.75rem;color:#aaa;margin-top:20px;border-top:1px solid #eee;padding-top:8px;}}
+</style></head><body>
+<h2>📊 주간 환율 리포트 — 2026년 4월 2주차</h2>
+<div class="cap">한국은행 ECOS API · 국민은행/신한은행 PDF · 서울파이낸셜</div>
+
+<div class="sh">1. 당사 외화 보유 현황 (매매기준율: {latest_date})</div>
+<table>
+<tr><th rowspan="2">날짜</th><th rowspan="2">통화</th><th rowspan="2">보유금액</th>
+<th colspan="2">장부 기준</th><th colspan="2">당일 기준</th><th rowspan="2">외환차손익(원)</th></tr>
+<tr><th>보유 평균환율</th><th>원화환산금액</th><th>매매기준율</th><th>원화환산금액</th></tr>
+{hold_rows}
+</table>
+<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">현재기준 외환차손익: {total_pnl:+,.0f}원</div>
+
+<div class="sh">2. 금주 환율 전망 ({REPORT_WEEK_START[4:6]}/{REPORT_WEEK_START[6:]} ~ {REPORT_WEEK_END[4:6]}/{REPORT_WEEK_END[6:]})</div>
+<div class="mc">
+<div><div class="lb">USD/KRW (금주 전망)</div><div class="vl">{usd_lo:,} ~ {usd_hi:,} 원</div>{_hdir(usd_dir)}</div>
+<div><div class="lb">CNY/KRW (금주 전망)</div><div class="vl">{cny_lo:,} ~ {cny_hi:,} 원</div>{_hdir(cny_dir)}</div>
+<div><div class="lb">USD/CNY (금주 전망)</div><div class="vl">{cross_lo} ~ {cross_hi}</div>{_hdir(cross_dir)}</div>
+</div>
+<table>
+<tr><th>통화</th><th>전망</th><th>예상 밴드</th><th>변동 요인</th></tr>
+<tr><td style="text-align:center;font-weight:700;">USD/KRW</td><td style="text-align:center;">{_hdir(usd_dir)}</td>
+<td style="text-align:center;font-weight:600;">{usd_lo:,}~{usd_hi:,}원</td><td>{usd_f}</td></tr>
+<tr><td style="text-align:center;font-weight:700;">CNY/KRW</td><td style="text-align:center;">{_hdir(cny_dir)}</td>
+<td style="text-align:center;font-weight:600;">{cny_lo:,}~{cny_hi:,}원</td><td>{cny_f}</td></tr>
+<tr><td style="text-align:center;font-weight:700;">USD/CNY</td><td style="text-align:center;">{_hdir(cross_dir)}</td>
+<td style="text-align:center;font-weight:600;">{cross_lo}~{cross_hi}</td><td>{cross_f}</td></tr>
+</table>
+
+<div class="sh">3. 환율 추이 및 전주 동향</div>
+{chart_html}
+
+<div class="mc">
+<div><div class="lb">USD/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_KRW']:,.2f} 원</div></div>
+<div><div class="lb">CNY/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['CNY_KRW']:,.2f} 원</div></div>
+<div><div class="lb">USD/CNY (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_CNY']:.4f}</div></div>
+</div>
+
+<div class="ft">ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · 2026년 4월 2주차 리포트</div>
+</body></html>"""
+
 st.divider()
+st.download_button(
+    label="📥 HTML 리포트 다운로드",
+    data=_gen_html().encode("utf-8"),
+    file_name="주간환율리포트_2026년4월2주차.html",
+    mime="text/html",
+)
+
+# ── 푸터 ──
 st.caption("ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · 2026년 4월 2주차 리포트")

@@ -212,7 +212,7 @@ def build_chart(df: pd.DataFrame) -> go.Figure:
                      range=axis_range(df["CNY_KRW"]), tickformat=".2f",
                      title_font=dict(color="#C00000"))
     fig.update_layout(
-        height=430, template="plotly_white", hovermode="x unified",
+        height=430, template="plotly_white", hovermode="closest",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=10, r=10, t=50, b=10),
         xaxis=dict(tickformat="%m/%d", dtick=7 * 86400000),
@@ -1301,9 +1301,10 @@ for d_str, label in sorted(_fixed_events.items()):
 if event_dates:
     fig.add_trace(go.Scatter(
         x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=12, color="rgba(0,0,0,0)", line=dict(width=0)),
+        marker=dict(size=18, color="rgba(0,0,0,0.01)", line=dict(width=0)),
         name="이벤트",
         showlegend=False,
+        hoverlabel=dict(bgcolor="white", font_size=12, bordercolor="#2E75B6"),
         hovertemplate="📌 %{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%Y-%m-%d}<extra></extra>",
         text=event_texts,
     ), secondary_y=False)

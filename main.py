@@ -1164,6 +1164,14 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# 뉴스 원문 (통화별 분석 표 바로 아래)
+news = report["news"]
+if news.get("url"):
+    with st.expander(f"📰 {news.get('title', '')[:45]}…"):
+        if news.get("body"):
+            st.markdown(news["body"][:600] + "…" if len(news.get("body", "")) > 600 else news.get("body", ""))
+        st.caption(f"[기사 원문]({news['url']})")
+
 st.divider()
 
 # CNY 환전 시뮬레이터
@@ -1240,16 +1248,6 @@ def _run_simulator():
     )
 
 _run_simulator()
-
-st.divider()
-
-# 뉴스 원문
-news = report["news"]
-if news.get("url"):
-    with st.expander(f"📰 {news.get('title', '')[:45]}…"):
-        if news.get("body"):
-            st.markdown(news["body"][:600] + "…" if len(news.get("body", "")) > 600 else news.get("body", ""))
-        st.caption(f"[기사 원문]({news['url']})")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

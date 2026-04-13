@@ -163,21 +163,18 @@ def compute_stats(df: pd.DataFrame) -> dict:
 # ═══════════════════════════════════════════════════════
 # 그래프
 # ═══════════════════════════════════════════════════════
-def build_chart(df: pd.DataFrame) -> go.Figure:
+def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # 전주 구간 배경 강조 (shape로 직접 그리기)
+    # 전주 구간 배경 강조
     lw_dates = df.loc[LAST_WEEK_START:LAST_WEEK_END].index
     if len(lw_dates) > 0:
-        x0_ms = int(lw_dates[0].timestamp() * 1000) - 43200000   # 반일 앞
-        x1_ms = int(lw_dates[-1].timestamp() * 1000) + 43200000  # 반일 뒤
+        x0_ms = int(lw_dates[0].timestamp() * 1000) - 43200000
+        x1_ms = int(lw_dates[-1].timestamp() * 1000) + 43200000
         fig.update_layout(
-            shapes=[
-                dict(type="rect", xref="x", yref="paper",
-                     x0=x0_ms, x1=x1_ms, y0=0, y1=1,
-                     fillcolor="rgba(0,0,0,0.06)", line=dict(width=0),
-                     layer="below"),
-            ],
+            shapes=[dict(type="rect", xref="x", yref="paper",
+                         x0=x0_ms, x1=x1_ms, y0=0, y1=1,
+                         fillcolor="rgba(0,0,0,0.06)", line=dict(width=0), layer="below")],
         )
 
     # 전체 기간 선
@@ -186,19 +183,37 @@ def build_chart(df: pd.DataFrame) -> go.Figure:
         line=dict(color="#2E75B6", width=2),
         hovertemplate="%{x|%m/%d}  %{y:,.2f}원<extra>USD/KRW</extra>",
     ), secondary_y=False)
-
     fig.add_trace(go.Scatter(
         x=df.index, y=df["CNY_KRW"], name="CNY/KRW",
         line=dict(color="#C00000", width=2),
         hovertemplate="%{x|%m/%d}  %{y:,.2f}원<extra>CNY/KRW</extra>",
     ), secondary_y=True)
-
     fig.add_trace(go.Scatter(
         x=df.index, y=df["USD_CNY"], name="USD/CNY (재정)",
         line=dict(color="#548235", width=1.5, dash="dot"),
         hovertemplate="%{x|%m/%d}  %{y:.4f}<extra>USD/CNY</extra>",
         visible="legendonly",
     ), secondary_y=True)
+
+    # 이벤트 마커 (함수 내부에서 추가)
+    if events:
+        ev_x, ev_y, ev_t = [], [], []
+        for d_str, label in sorted(events.items()):
+            ev = pd.Timestamp(d_str)
+            if ev not in df.index:
+                future = df.index[df.index >= ev]
+                if len(future) == 0:
+                    continue
+                ev = future[0]
+            ev_x.append(ev)
+            ev_y.append(float(df.loc[ev, "USD_KRW"]))
+            ev_t.append(f"📌 {label}\nUSD/KRW: {df.loc[ev, 'USD_KRW']:,.2f}원\n{ev.strftime('%Y-%m-%d')}")
+        if ev_x:
+            fig.add_trace(go.Scatter(
+                x=ev_x, y=ev_y, mode="markers",
+                marker=dict(size=8, color="#2E75B6", symbol="circle", opacity=0.5),
+                showlegend=False, hoverinfo="text", hovertext=ev_t,
+            ), secondary_y=False)
 
     def axis_range(s, m=0.12):
         lo, hi = s.min(), s.max()
@@ -1258,10 +1273,9 @@ st.markdown('<div class="section-header">3. 환율 추이 및 전주 동향</div
 
 # ── 직전 3개월 환율 추이 ──
 st.markdown(f"##### 📈 직전 3개월 환율 추이 ({START_DATE[4:6]}/{START_DATE[6:]} ~ {END_DATE[4:6]}/{END_DATE[6:]})")
-fig = build_chart(df)
 
-# 주요 이벤트 (하드코딩 + Claude 분석)
-_fixed_events = {
+# 주요 이벤트 딕셔너리
+_chart_events = {
     "2026-02-28": "이란 전쟁 발발",
     "2026-03-07": "미국 2월 고용지표 발표",
     "2026-03-12": "미국 2월 CPI 발표",
@@ -1271,45 +1285,18 @@ _fixed_events = {
     "2026-04-01": "트럼프 이란 최후통첩",
     "2026-04-03": "국제유가 배럴당 130달러 돌파",
 }
-
-# Claude PDF에서 추출한 지표도 추가
 for ind in report.get("indicators", []):
     if ind["date"] == "미정":
         continue
     try:
         parts = ind["date"].split("/")
         d_str = f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}"
-        if d_str not in _fixed_events:
-            _fixed_events[d_str] = ind["name"]
+        if d_str not in _chart_events:
+            _chart_events[d_str] = ind["name"]
     except (ValueError, IndexError):
         continue
 
-# 이벤트를 USD/KRW 선 위에 마커로 추가
-event_dates, event_rates, event_texts = [], [], []
-for d_str, label in sorted(_fixed_events.items()):
-    ev_date = pd.Timestamp(d_str)
-    # 해당 날짜가 데이터에 없으면 다음 영업일 찾기
-    if ev_date not in df.index:
-        future = df.index[df.index >= ev_date]
-        if len(future) == 0:
-            continue
-        ev_date = future[0]
-    rate = float(df.loc[ev_date, "USD_KRW"])
-    event_dates.append(ev_date)
-    event_rates.append(rate)
-    event_texts.append(label)
-
-if event_dates:
-    fig.add_trace(go.Scatter(
-        x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=8, color="#2E75B6", symbol="circle", opacity=0.5),
-        name="주요 이벤트",
-        showlegend=False,
-        hoverinfo="text",
-        hovertext=[f"📌 {t}<br>USD/KRW: {r:,.2f}원<br>{d.strftime('%Y-%m-%d')}"
-                   for t, r, d in zip(event_texts, event_rates, event_dates)],
-    ), secondary_y=False)
-
+fig = build_chart(df, events=_chart_events)
 st.plotly_chart(fig, use_container_width=True)
 
 # 요약 테이블 (그래프 바로 아래)

@@ -1288,6 +1288,20 @@ if event_dates:
 
 st.plotly_chart(fig, use_container_width=True)
 
+# 요약 테이블 (그래프 바로 아래)
+lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
+if not lw_data.empty:
+    summary = pd.DataFrame({
+        "": ["전주 평균", "전주 최고", "전주 최저", "3개월 평균"],
+        "USD/KRW": [f"{lw_data['USD_KRW'].mean():,.2f}", f"{lw_data['USD_KRW'].max():,.2f}",
+                    f"{lw_data['USD_KRW'].min():,.2f}", f"{stats['avg_3m']['USD_KRW']:,.2f}"],
+        "CNY/KRW": [f"{lw_data['CNY_KRW'].mean():,.2f}", f"{lw_data['CNY_KRW'].max():,.2f}",
+                    f"{lw_data['CNY_KRW'].min():,.2f}", f"{stats['avg_3m']['CNY_KRW']:,.2f}"],
+        "USD/CNY": [f"{lw_data['USD_CNY'].mean():.4f}", f"{lw_data['USD_CNY'].max():.4f}",
+                    f"{lw_data['USD_CNY'].min():.4f}", f"{stats['avg_3m']['USD_CNY']:.4f}"],
+    })
+    st.dataframe(summary, use_container_width=True, hide_index=True)
+
 with st.expander("원본 데이터 테이블 (최근 30영업일)"):
     disp = df.tail(30).copy()
     disp.columns = ["USD/KRW", "CNY/KRW", "USD/CNY"]
@@ -1311,7 +1325,6 @@ st.divider()
 st.markdown(f"##### 📋 전주 환율 요약 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})")
 
 # 메트릭 카드 (% + 금액 차이 병기)
-lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
 usd_diff = stats["avg_lw"]["USD_KRW"] - stats["avg_prev"]["USD_KRW"]
 cny_diff = stats["avg_lw"]["CNY_KRW"] - stats["avg_prev"]["CNY_KRW"]
 cross_diff = stats["avg_lw"]["USD_CNY"] - stats["avg_prev"]["USD_CNY"]
@@ -1323,19 +1336,6 @@ c2.metric("CNY/KRW (전주 평균)", f"{stats['avg_lw']['CNY_KRW']:,.2f} 원",
           delta=f"{stats['cny_vs_pw']:+.2f}% ({cny_diff:+,.2f}원)", delta_color="inverse")
 c3.metric("USD/CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
           delta=f"{stats['cross_vs_pw']:+.2f}% ({cross_diff:+.4f})", delta_color="inverse")
-
-# 요약 테이블
-if not lw_data.empty:
-    summary = pd.DataFrame({
-        "": ["전주 평균", "전주 최고", "전주 최저", "3개월 평균"],
-        "USD/KRW": [f"{lw_data['USD_KRW'].mean():,.2f}", f"{lw_data['USD_KRW'].max():,.2f}",
-                    f"{lw_data['USD_KRW'].min():,.2f}", f"{stats['avg_3m']['USD_KRW']:,.2f}"],
-        "CNY/KRW": [f"{lw_data['CNY_KRW'].mean():,.2f}", f"{lw_data['CNY_KRW'].max():,.2f}",
-                    f"{lw_data['CNY_KRW'].min():,.2f}", f"{stats['avg_3m']['CNY_KRW']:,.2f}"],
-        "USD/CNY": [f"{lw_data['USD_CNY'].mean():.4f}", f"{lw_data['USD_CNY'].max():.4f}",
-                    f"{lw_data['USD_CNY'].min():.4f}", f"{stats['avg_3m']['USD_CNY']:.4f}"],
-    })
-    st.dataframe(summary, use_container_width=True, hide_index=True)
 
 # 전주 복기: 전망 vs 실제
 st.markdown("##### 🔍 전주 복기 — 전망 vs 실제")

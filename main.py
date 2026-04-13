@@ -1251,9 +1251,9 @@ _run_simulator()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 3: 직전 3개월 환율 추이 및 전주 환율 요약
+# 섹션 3: 환율 추이 및 전주 동향
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown('<div class="section-header">3. 직전 3개월 환율 추이 및 전주 환율 요약</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">3. 환율 추이 및 전주 동향</div>', unsafe_allow_html=True)
 
 # ── 직전 3개월 환율 추이 ──
 st.markdown(f"##### 📈 직전 3개월 환율 추이 ({START_DATE[4:6]}/{START_DATE[6:]} ~ {END_DATE[4:6]}/{END_DATE[6:]})")
@@ -1302,8 +1302,8 @@ if not lw_data.empty:
 
 st.divider()
 
-# ── 전주 환율 요약 ──
-st.markdown(f"##### 📋 전주 환율 요약 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})")
+# ── 전주 환율 현황 ──
+st.markdown(f"##### 📋 전주 환율 현황 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})")
 
 # 메트릭 카드 (% + 금액 차이 병기)
 usd_diff = stats["avg_lw"]["USD_KRW"] - stats["avg_prev"]["USD_KRW"]

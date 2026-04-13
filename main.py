@@ -1327,11 +1327,11 @@ cross_diff = stats["avg_lw"]["USD_CNY"] - stats["avg_prev"]["USD_CNY"]
 
 c1, c2, c3 = st.columns(3)
 c1.metric("USD/KRW (전주 평균)", f"{stats['avg_lw']['USD_KRW']:,.2f} 원",
-          delta=f"{stats['usd_vs_pw']:+.2f}% ({usd_diff:+,.2f}원)", delta_color="inverse")
+          delta=f"{stats['usd_vs_pw']:+.2f}% ({usd_diff:+,.2f}원) 전전주 대비", delta_color="inverse")
 c2.metric("CNY/KRW (전주 평균)", f"{stats['avg_lw']['CNY_KRW']:,.2f} 원",
-          delta=f"{stats['cny_vs_pw']:+.2f}% ({cny_diff:+,.2f}원)", delta_color="inverse")
+          delta=f"{stats['cny_vs_pw']:+.2f}% ({cny_diff:+,.2f}원) 전전주 대비", delta_color="inverse")
 c3.metric("USD/CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
-          delta=f"{stats['cross_vs_pw']:+.2f}% ({cross_diff:+.4f})", delta_color="inverse")
+          delta=f"{stats['cross_vs_pw']:+.2f}% ({cross_diff:+.4f}) 전전주 대비", delta_color="inverse")
 
 # 전주 복기: 전망 vs 실적
 
@@ -1377,29 +1377,12 @@ if prev_forecast and not lw_data.empty:
         a_hi = float(lw_data[col].max())
         a_avg = float(lw_data[col].mean())
 
-        # 전전주 평균 대비 방향 + 차이
-        prev_avg_val = float(stats["avg_prev"][col])
-        diff_val = a_avg - prev_avg_val
-        if diff_val > 0:
-            r_dir = "상승"
-            r_color = "#C00000"
-            r_arrow = "↑"
-        elif diff_val < 0:
-            r_dir = "하락"
-            r_color = "#4A90D9"
-            r_arrow = "↓"
+        if a_hi > f_hi:
+            result = "⬆️ 상단 상회"
+        elif a_lo < f_lo:
+            result = "⬇️ 하단 하회"
         else:
-            r_dir = "보합"
-            r_color = "#2E8B57"
-            r_arrow = "→"
-
-        if fmt == "cross":
-            diff_str = f"{diff_val:+.4f}"
-        else:
-            diff_str = f"{diff_val:+,.1f}원"
-
-        result = (f'<span style="color:{r_color};font-weight:700;">{r_arrow} {r_dir}</span><br>'
-                  f'<span style="font-size:0.78rem;color:#888;">전주 평균 대비 {diff_str}</span>')
+            result = "✅ 범위 내"
 
         # Claude가 분석한 전주 변동요인
         prev_factors = prev_claude_factors.get(cur, ["분석 데이터 없음"])

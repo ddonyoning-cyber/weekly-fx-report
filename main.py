@@ -1302,23 +1302,6 @@ if not lw_data.empty:
     })
     st.dataframe(summary, use_container_width=True, hide_index=True)
 
-with st.expander("원본 데이터 테이블 (최근 30영업일)"):
-    disp = df.tail(30).copy()
-    disp.columns = ["USD/KRW", "CNY/KRW", "USD/CNY"]
-    lw_start_ts = pd.Timestamp(LAST_WEEK_START)
-    lw_end_ts = pd.Timestamp(LAST_WEEK_END)
-    is_lw = [(lw_start_ts <= idx <= lw_end_ts) for idx in disp.index]
-    disp.index = disp.index.strftime("%Y-%m-%d")
-    def _highlight_lw(row):
-        row_idx = disp.index.get_loc(row.name)
-        if is_lw[row_idx]:
-            return ["background-color: #e0e0e0"] * len(row)
-        return [""] * len(row)
-    styled = (disp.style
-              .format({"USD/KRW": "{:,.2f}", "CNY/KRW": "{:,.2f}", "USD/CNY": "{:.4f}"})
-              .apply(_highlight_lw, axis=1))
-    st.dataframe(styled, use_container_width=True)
-
 st.divider()
 
 # ── 전주 환율 요약 ──

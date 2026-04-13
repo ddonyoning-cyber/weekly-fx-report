@@ -1253,9 +1253,61 @@ if news.get("url"):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 3: 전주 환율 요약 및 복기
+# 섹션 3: 직전 3개월 환율 추이 및 전주 환율 요약
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown(f'<div class="section-header">3. 전주 환율 요약 및 복기 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="section-header">3. 직전 3개월 환율 추이 및 전주 환율 요약 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})</div>', unsafe_allow_html=True)
+
+# ── 3개월 환율 추이 그래프 ──
+fig = build_chart(df)
+
+# 이벤트 마커 추가 (뉴스 기반)
+event_dates, event_rates, event_texts = [], [], []
+for ind in report.get("indicators", []):
+    if ind["date"] == "미정":
+        continue
+    try:
+        parts = ind["date"].split("/")
+        ev_date = pd.Timestamp(f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}")
+        if df.index[0] <= ev_date <= df.index[-1]:
+            nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
+            event_dates.append(nearest)
+            event_rates.append(df.loc[nearest, "USD_KRW"])
+            event_texts.append(ind["name"])
+    except (ValueError, IndexError):
+        continue
+
+if event_dates:
+    fig.add_trace(go.Scatter(
+        x=event_dates, y=event_rates, mode="markers",
+        marker=dict(size=10, color="#e6a817", symbol="diamond", line=dict(width=1, color="#333")),
+        name="주요 이벤트",
+        hovertemplate="%{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%m/%d}<extra></extra>",
+        text=event_texts,
+    ), secondary_y=False)
+
+st.plotly_chart(fig, use_container_width=True)
+
+with st.expander("원본 데이터 테이블 (최근 30영업일)"):
+    disp = df.tail(30).copy()
+    disp.columns = ["USD/KRW", "CNY/KRW", "USD/CNY"]
+    lw_start_ts = pd.Timestamp(LAST_WEEK_START)
+    lw_end_ts = pd.Timestamp(LAST_WEEK_END)
+    is_lw = [(lw_start_ts <= idx <= lw_end_ts) for idx in disp.index]
+    disp.index = disp.index.strftime("%Y-%m-%d")
+    def _highlight_lw(row):
+        row_idx = disp.index.get_loc(row.name)
+        if is_lw[row_idx]:
+            return ["background-color: #e0e0e0"] * len(row)
+        return [""] * len(row)
+    styled = (disp.style
+              .format({"USD/KRW": "{:,.2f}", "CNY/KRW": "{:,.2f}", "USD/CNY": "{:.4f}"})
+              .apply(_highlight_lw, axis=1))
+    st.dataframe(styled, use_container_width=True)
+
+st.divider()
+
+# ── 전주 환율 요약 ──
+st.markdown("##### 📋 전주 환율 요약")
 
 # 메트릭 카드 (% + 금액 차이 병기)
 lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
@@ -1376,59 +1428,6 @@ else:
     st.caption("전주 전망 PDF가 없어 복기 분석을 수행할 수 없습니다.")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 4: 직전 3개월 환율 추이
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown('<div class="section-header">4. 직전 3개월 환율 추이</div>', unsafe_allow_html=True)
-
-fig = build_chart(df)
-
-# 이벤트 마커 추가 (뉴스 기반)
-event_dates, event_rates, event_texts = [], [], []
-for ind in report.get("indicators", []):
-    if ind["date"] == "미정":
-        continue
-    try:
-        parts = ind["date"].split("/")
-        ev_date = pd.Timestamp(f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}")
-        if df.index[0] <= ev_date <= df.index[-1]:
-            nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
-            event_dates.append(nearest)
-            event_rates.append(df.loc[nearest, "USD_KRW"])
-            event_texts.append(ind["name"])
-    except (ValueError, IndexError):
-        continue
-
-if event_dates:
-    fig.add_trace(go.Scatter(
-        x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=10, color="#e6a817", symbol="diamond", line=dict(width=1, color="#333")),
-        name="주요 이벤트",
-        hovertemplate="%{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%m/%d}<extra></extra>",
-        text=event_texts,
-    ), secondary_y=False)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# 원본 데이터 테이블
-with st.expander("원본 데이터 테이블 (최근 30영업일)"):
-    disp = df.tail(30).copy()
-    disp.columns = ["USD/KRW", "CNY/KRW", "USD/CNY"]
-    lw_start = pd.Timestamp(LAST_WEEK_START)
-    lw_end = pd.Timestamp(LAST_WEEK_END)
-    is_lw = [(lw_start <= idx <= lw_end) for idx in disp.index]
-    disp.index = disp.index.strftime("%Y-%m-%d")
-
-    def _highlight_lw(row):
-        row_idx = disp.index.get_loc(row.name)
-        if is_lw[row_idx]:
-            return ["background-color: #e0e0e0"] * len(row)
-        return [""] * len(row)
-
-    styled = (disp.style
-              .format({"USD/KRW": "{:,.2f}", "CNY/KRW": "{:,.2f}", "USD/CNY": "{:.4f}"})
-              .apply(_highlight_lw, axis=1))
-    st.dataframe(styled, use_container_width=True)
 
 # ── 푸터 ──
 st.divider()

@@ -1260,28 +1260,51 @@ st.markdown('<div class="section-header">3. 환율 추이 및 전주 동향</div
 st.markdown(f"##### 📈 직전 3개월 환율 추이 ({START_DATE[4:6]}/{START_DATE[6:]} ~ {END_DATE[4:6]}/{END_DATE[6:]})")
 fig = build_chart(df)
 
-# 이벤트 마커 추가 (뉴스 기반)
-event_dates, event_rates, event_texts = [], [], []
+# 주요 이벤트 (하드코딩 + Claude 분석)
+_fixed_events = {
+    "2026-02-28": "이란 전쟁 발발",
+    "2026-03-07": "미국 2월 고용지표 발표",
+    "2026-03-12": "미국 2월 CPI 발표",
+    "2026-03-19": "FOMC 금리 동결",
+    "2026-03-20": "한국은행 금통위 기준금리 동결",
+    "2026-03-25": "호르무즈 해협 봉쇄 이슈",
+    "2026-04-01": "트럼프 이란 최후통첩",
+    "2026-04-03": "국제유가 배럴당 130달러 돌파",
+}
+
+# Claude PDF에서 추출한 지표도 추가
 for ind in report.get("indicators", []):
     if ind["date"] == "미정":
         continue
     try:
         parts = ind["date"].split("/")
-        ev_date = pd.Timestamp(f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}")
-        if df.index[0] <= ev_date <= df.index[-1]:
-            nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
-            event_dates.append(nearest)
-            event_rates.append(df.loc[nearest, "USD_KRW"])
-            event_texts.append(ind["name"])
+        d_str = f"2026-{int(parts[0]):02d}-{int(parts[1]):02d}"
+        if d_str not in _fixed_events:
+            _fixed_events[d_str] = ind["name"]
+    except (ValueError, IndexError):
+        continue
+
+# 투명 마커 (호버 시만 보임)
+event_dates, event_rates, event_texts = [], [], []
+for d_str, label in sorted(_fixed_events.items()):
+    try:
+        ev_date = pd.Timestamp(d_str)
+        if ev_date < df.index[0] or ev_date > df.index[-1]:
+            continue
+        nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
+        event_dates.append(nearest)
+        event_rates.append(float(df.loc[nearest, "USD_KRW"]))
+        event_texts.append(label)
     except (ValueError, IndexError):
         continue
 
 if event_dates:
     fig.add_trace(go.Scatter(
         x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=10, color="#e6a817", symbol="diamond", line=dict(width=1, color="#333")),
-        name="주요 이벤트",
-        hovertemplate="%{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%m/%d}<extra></extra>",
+        marker=dict(size=12, color="rgba(0,0,0,0)", line=dict(width=0)),
+        name="이벤트",
+        showlegend=False,
+        hovertemplate="📌 %{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%Y-%m-%d}<extra></extra>",
         text=event_texts,
     ), secondary_y=False)
 

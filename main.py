@@ -197,7 +197,7 @@ def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
 
     # 이벤트 마커 (함수 내부에서 추가)
     if events:
-        ev_x, ev_y, ev_t = [], [], []
+        ev_x, ev_y, ev_labels = [], [], []
         for d_str, label in sorted(events.items()):
             ev = pd.Timestamp(d_str)
             if ev not in df.index:
@@ -207,12 +207,14 @@ def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
                 ev = future[0]
             ev_x.append(ev)
             ev_y.append(float(df.loc[ev, "USD_KRW"]))
-            ev_t.append(f"📌 {label}\nUSD/KRW: {df.loc[ev, 'USD_KRW']:,.2f}원\n{ev.strftime('%Y-%m-%d')}")
+            ev_labels.append(f"📌 {label}")
         if ev_x:
             fig.add_trace(go.Scatter(
                 x=ev_x, y=ev_y, mode="markers",
                 marker=dict(size=8, color="#2E75B6", symbol="circle", opacity=0.5),
-                showlegend=False, hoverinfo="text", hovertext=ev_t,
+                showlegend=False, name="이벤트",
+                hovertemplate="%{text}<extra></extra>",
+                text=ev_labels,
             ), secondary_y=False)
 
     def axis_range(s, m=0.12):
@@ -227,7 +229,7 @@ def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
                      range=axis_range(df["CNY_KRW"]), tickformat=".2f",
                      title_font=dict(color="#C00000"))
     fig.update_layout(
-        height=430, template="plotly_white", hovermode="closest",
+        height=430, template="plotly_white", hovermode="x",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=10, r=10, t=50, b=10),
         xaxis=dict(tickformat="%m/%d", dtick=7 * 86400000),

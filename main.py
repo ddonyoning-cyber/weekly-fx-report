@@ -1255,9 +1255,10 @@ if news.get("url"):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 섹션 3: 직전 3개월 환율 추이 및 전주 환율 요약
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-st.markdown(f'<div class="section-header">3. 직전 3개월 환율 추이 및 전주 환율 요약 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">3. 직전 3개월 환율 추이 및 전주 환율 요약</div>', unsafe_allow_html=True)
 
-# ── 3개월 환율 추이 그래프 ──
+# ── 직전 3개월 환율 추이 ──
+st.markdown(f"##### 📈 직전 3개월 환율 추이 ({START_DATE[4:6]}/{START_DATE[6:]} ~ {END_DATE[4:6]}/{END_DATE[6:]})")
 fig = build_chart(df)
 
 # 이벤트 마커 추가 (뉴스 기반)
@@ -1307,7 +1308,7 @@ with st.expander("원본 데이터 테이블 (최근 30영업일)"):
 st.divider()
 
 # ── 전주 환율 요약 ──
-st.markdown("##### 📋 전주 환율 요약")
+st.markdown(f"##### 📋 전주 환율 요약 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})")
 
 # 메트릭 카드 (% + 금액 차이 병기)
 lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]

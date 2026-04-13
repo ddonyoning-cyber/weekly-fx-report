@@ -1284,29 +1284,30 @@ for ind in report.get("indicators", []):
     except (ValueError, IndexError):
         continue
 
-# 투명 마커 (호버 시만 보임)
+# 이벤트를 USD/KRW 선 위에 마커로 추가
 event_dates, event_rates, event_texts = [], [], []
 for d_str, label in sorted(_fixed_events.items()):
-    try:
-        ev_date = pd.Timestamp(d_str)
-        if ev_date < df.index[0] or ev_date > df.index[-1]:
+    ev_date = pd.Timestamp(d_str)
+    # 해당 날짜가 데이터에 없으면 다음 영업일 찾기
+    if ev_date not in df.index:
+        future = df.index[df.index >= ev_date]
+        if len(future) == 0:
             continue
-        nearest = df.index[df.index.get_indexer([ev_date], method="nearest")[0]]
-        event_dates.append(nearest)
-        event_rates.append(float(df.loc[nearest, "USD_KRW"]))
-        event_texts.append(label)
-    except (ValueError, IndexError):
-        continue
+        ev_date = future[0]
+    rate = float(df.loc[ev_date, "USD_KRW"])
+    event_dates.append(ev_date)
+    event_rates.append(rate)
+    event_texts.append(label)
 
 if event_dates:
     fig.add_trace(go.Scatter(
         x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=7, color="#2E75B6", symbol="circle", opacity=0.4),
-        name="이벤트",
+        marker=dict(size=8, color="#2E75B6", symbol="circle", opacity=0.5),
+        name="주요 이벤트",
         showlegend=False,
-        hoverlabel=dict(bgcolor="white", font_size=12, bordercolor="#2E75B6"),
-        hovertemplate="📌 %{text}<br>USD/KRW: %{y:,.2f}원<br>%{x|%Y-%m-%d}<extra></extra>",
-        text=event_texts,
+        hoverinfo="text",
+        hovertext=[f"📌 {t}<br>USD/KRW: {r:,.2f}원<br>{d.strftime('%Y-%m-%d')}"
+                   for t, r, d in zip(event_texts, event_rates, event_dates)],
     ), secondary_y=False)
 
 st.plotly_chart(fig, use_container_width=True)

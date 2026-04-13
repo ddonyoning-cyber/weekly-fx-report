@@ -350,8 +350,9 @@ def analyze_pdfs_with_claude(folder: str, week_type: str = "금주") -> dict:
 USD/KRW, CNY/KRW, USD/CNY(재정환율) 각 통화에 대해 주요 변동 요인 3가지씩을 다음 형식으로 작성해주세요:
 
 - 각 요인은 "원인 → 메커니즘 → 결과" 형식의 짧은 한 문장 (40자 이내)
+- 반드시 → 화살표를 사용하여 인과관계를 표현 (쉼표(,)로 나열하지 말 것)
 - 핵심 키워드는 **굵게** 표시 (HTML <b> 태그 사용)
-- 인과관계가 명확하게 보이도록 작성
+- 예시: "<b>이란 전쟁</b> 불확실성 → 위험회피 심리 → <b>달러 매수</b> 자극"
 
 JSON 형식으로 정확히 응답해주세요:
 {{
@@ -1362,12 +1363,29 @@ if prev_forecast and not lw_data.empty:
         a_hi = float(lw_data[col].max())
         a_avg = float(lw_data[col].mean())
 
-        if a_hi > f_hi:
-            result = "⬆️ 상단 상회"
-        elif a_lo < f_lo:
-            result = "⬇️ 하단 하회"
+        # 전전주 평균 대비 방향 + 차이
+        prev_avg_val = float(stats["avg_prev"][col])
+        diff_val = a_avg - prev_avg_val
+        if diff_val > 0:
+            r_dir = "상승"
+            r_color = "#C00000"
+            r_arrow = "↑"
+        elif diff_val < 0:
+            r_dir = "하락"
+            r_color = "#4A90D9"
+            r_arrow = "↓"
         else:
-            result = "✅ 범위 내"
+            r_dir = "보합"
+            r_color = "#2E8B57"
+            r_arrow = "→"
+
+        if fmt == "cross":
+            diff_str = f"{diff_val:+.4f}"
+        else:
+            diff_str = f"{diff_val:+,.1f}원"
+
+        result = (f'<span style="color:{r_color};font-weight:700;">{r_arrow} {r_dir}</span><br>'
+                  f'<span style="font-size:0.78rem;color:#888;">전주 평균 대비 {diff_str}</span>')
 
         # Claude가 분석한 전주 변동요인
         prev_factors = prev_claude_factors.get(cur, ["분석 데이터 없음"])

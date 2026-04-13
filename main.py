@@ -1301,7 +1301,7 @@ for d_str, label in sorted(_fixed_events.items()):
 if event_dates:
     fig.add_trace(go.Scatter(
         x=event_dates, y=event_rates, mode="markers",
-        marker=dict(size=18, color="rgba(0,0,0,0.01)", line=dict(width=0)),
+        marker=dict(size=7, color="#2E75B6", symbol="circle", opacity=0.4),
         name="이벤트",
         showlegend=False,
         hoverlabel=dict(bgcolor="white", font_size=12, bordercolor="#2E75B6"),

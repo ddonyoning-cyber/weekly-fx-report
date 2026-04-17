@@ -1141,67 +1141,50 @@ with st.spinner("AI가 외환 포지션을 분석하는 중..."):
 with st.chat_message("assistant"):
     st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{ai_strategy}")
 
-# 중단: 핵심 지표 카드 (USD / CNY 분리)
-st.markdown("**USD 포지션**")
-u1, u2, u3, u4 = st.columns(4)
-u1.metric("보유 현금", f"${usd_cash:,.0f}")
-u2.metric("채권(AR)", f"${usd_ar_val:,.0f}")
-u3.metric("채무(AP)", f"${usd_ap_val:,.0f}")
-u4.metric("순 노출액", f"${usd_net:,.0f}")
+# 초소형 핵심 메트릭 (순 노출액 2개만)
+n1, n2 = st.columns(2)
+usd_net_color = "inverse" if usd_net >= 0 else "normal"
+cny_net_color = "inverse" if cny_net >= 0 else "normal"
+n1.metric("USD 순 노출액", f"${usd_net:,.0f}", delta=f"현금${usd_cash:,.0f} + AR${usd_ar_val:,.0f} - AP${usd_ap_val:,.0f}")
+n2.metric("CNY 순 노출액", f"¥{cny_net:,.0f}", delta=f"현금¥{cny_cash:,.0f} + AR¥{cny_ar_val:,.0f} - AP¥{cny_ap_val:,.0f}")
 
-st.markdown("**CNY 포지션**")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("보유 현금", f"¥{cny_cash:,.0f}")
-c2.metric("채권(AR)", f"¥{cny_ar_val:,.0f}")
-c3.metric("채무(AP)", f"¥{cny_ap_val:,.0f}")
-c4.metric("순 노출액", f"¥{cny_net:,.0f}")
+# 통화별 탭
+tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 관리", "🇨🇳 CNY 수익 전략"])
 
-# 하단: 상세 보유현황 테이블 (접힘)
-with st.expander("📋 상세 보유현황 테이블"):
-    # 기존 보유현황 테이블
-    amt = [cash_data.get(c, {}).get("금액", 0) for c in ["USD", "CNY"]]
-    book = [cash_data.get(c, {}).get("보유환율", 0) for c in ["USD", "CNY"]]
-    mkt = [rate_map.get(c, 0) for c in ["USD", "CNY"]]
-    pnl = [(m - b) * a for m, b, a in zip(mkt, book, amt)]
-    book_krw = [a * b for a, b in zip(amt, book)]
-    mkt_krw = [a * m for a, m in zip(amt, mkt)]
-    currencies = ["USD", "CNY"]
+with tab_usd:
+    # USD 카드 4개
+    u1, u2, u3, u4 = st.columns(4)
+    u1.metric("보유 현금", f"${usd_cash:,.0f}")
+    u2.metric("채권(AR)", f"${usd_ar_val:,.0f}")
+    u3.metric("채무(AP)", f"${usd_ap_val:,.0f}")
+    u4.metric("순 노출액", f"${usd_net:,.0f}")
 
-    rows_html = ""
-    for i in range(len(currencies)):
-        p = pnl[i]
-        pc = "#C00000" if p > 0 else "#4A90D9"
-        rows_html += (
-            f'<tr><td>{latest_date}</td><td>{currencies[i]}</td>'
-            f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{book[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
-            f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
-            f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td></tr>'
-        )
-    total_pnl = sum(pnl)
-    tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
-
+    # USD 보유현황 상세
+    usd_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
+    usd_pnl_color = "#C00000" if usd_pnl > 0 else "#4A90D9"
     st.markdown(
-        f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
-        f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
-        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
-        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th></tr>'
-        f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th></tr>'
-        f'{rows_html}</table>'
-        f'<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">'
-        f'현재기준 외환차손익 : {total_pnl:+,.0f}원</div>',
-        unsafe_allow_html=True,
-    )
+        f'<div style="margin-top:8px;padding:12px 16px;background:#f8f9fc;border-radius:8px;font-size:0.9rem;line-height:1.8;">'
+        f'현재 USD/KRW: <b>{usd_mkt:,.2f}원</b> · 장부단가: <b>{usd_book:,.2f}원</b><br>'
+        f'외환차손익: <span style="color:{usd_pnl_color};font-weight:700;">{usd_pnl:+,.0f}원</span>'
+        f'</div>', unsafe_allow_html=True)
+
+with tab_cny:
+    # CNY 카드 4개
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("보유 현금", f"¥{cny_cash:,.0f}")
+    c2.metric("채권(AR)", f"¥{cny_ar_val:,.0f}")
+    c3.metric("채무(AP)", f"¥{cny_ap_val:,.0f}")
+    c4.metric("순 노출액", f"¥{cny_net:,.0f}")
+
+    # CNY 보유현황 상세
+    cny_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
+    cny_pnl_color = "#C00000" if cny_pnl > 0 else "#4A90D9"
+    st.markdown(
+        f'<div style="margin-top:8px;padding:12px 16px;background:#fdf8f0;border-radius:8px;font-size:0.9rem;line-height:1.8;">'
+        f'현재 CNY/KRW: <b>{cny_mkt:,.2f}원</b> · 장부단가: <b>{cny_book:,.2f}원</b> · '
+        f'재정환율: <b>{cross_rate:.4f}</b><br>'
+        f'외환차손익: <span style="color:{cny_pnl_color};font-weight:700;">{cny_pnl:+,.0f}원</span>'
+        f'</div>', unsafe_allow_html=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

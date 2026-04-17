@@ -1065,87 +1065,88 @@ for _, row in ap_df.iterrows():
     cur = str(row["통화"])
     net_exposure[cur] = net_exposure.get(cur, 0) - float(row["금액"])
 
-# ── AI 전략 제안 생성 ──
+# ── 데이터 요약 텍스트 생성 (Claude에 전달) ──
 cny_cash = cash_data.get("CNY", {}).get("금액", 0)
 cny_book = cash_data.get("CNY", {}).get("보유환율", 0)
 cny_net = net_exposure.get("CNY", 0)
 usd_cash = cash_data.get("USD", {}).get("금액", 0)
 usd_book = cash_data.get("USD", {}).get("보유환율", 0)
 usd_net = net_exposure.get("USD", 0)
-
 cny_mkt = rate_map.get("CNY", 0)
 usd_mkt = rate_map.get("USD", 0)
 cross_rate = usd_mkt / cny_mkt if cny_mkt else 0
 
-# 전략 판단
-strategy_lines = []
-if cny_net > 0 and cny_book > 0:
-    cny_pnl_krw = (cny_mkt - cny_book) * cny_net
-    cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
+cny_ar_val = float(ar_df[ar_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ar_df["통화"].values else 0
+cny_ap_val = float(ap_df[ap_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ap_df["통화"].values else 0
+usd_ar_val = float(ar_df[ar_df["통화"] == "USD"]["금액"].sum()) if "USD" in ar_df["통화"].values else 0
+usd_ap_val = float(ap_df[ap_df["통화"] == "USD"]["금액"].sum()) if "USD" in ap_df["통화"].values else 0
 
-    # CNY→KRW vs CNY→USD 비교
-    if cny_mkt > cny_book:
-        strategy_lines.append(
-            f"**CNY/KRW** 현재 환율({cny_mkt:,.2f}원)이 장부가({cny_book:,.2f}원) 대비 "
-            f"**{cny_pnl_pct:+.2f}%** 유리합니다. "
-            f"순 노출액 {cny_net:,.0f} CNY 환전 시 약 **{cny_pnl_krw:+,.0f}원**의 환차익이 예상됩니다."
+summary_text = f"""[당사 외화 포지션 현황 — {latest_date} 기준]
+
+■ CNY (위안화)
+- 보유 현금: {cny_cash:,.0f} CNY (장부단가: {cny_book:,.2f}원)
+- 이번 주 채권(AR): {cny_ar_val:,.0f} CNY
+- 이번 주 채무(AP): {cny_ap_val:,.0f} CNY
+- 순 노출액: {cny_net:,.0f} CNY
+
+■ USD (달러)
+- 보유 현금: {usd_cash:,.0f} USD (장부단가: {usd_book:,.2f}원)
+- 이번 주 채권(AR): {usd_ar_val:,.0f} USD
+- 이번 주 채무(AP): {usd_ap_val:,.0f} USD
+- 순 노출액: {usd_net:,.0f} USD
+
+■ 현재 시장 환율
+- CNY/KRW: {cny_mkt:,.2f}원 (장부 대비 {(cny_mkt-cny_book)/cny_book*100 if cny_book else 0:+.2f}%)
+- USD/KRW: {usd_mkt:,.2f}원 (장부 대비 {(usd_mkt-usd_book)/usd_book*100 if usd_book else 0:+.2f}%)
+- USD/CNY (재정환율): {cross_rate:.4f}
+- 금주 USD/KRW 전망: {usd_dir} ({usd_lo:,}~{usd_hi:,}원)
+- 금주 CNY/KRW 전망: {cny_dir} ({cny_lo:,}~{cny_hi:,}원)"""
+
+# ── Claude API 자율 분석 ──
+@st.cache_data(ttl=86400, show_spinner=False)
+def _ai_fx_strategy(context: str) -> str:
+    if not ANTHROPIC_API_KEY:
+        return "⚠️ API 키가 설정되지 않아 AI 분석을 수행할 수 없습니다."
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
+        msg = client.messages.create(
+            model="claude-sonnet-4-5-20250514",
+            max_tokens=2000,
+            system="""너는 글로벌 기업의 외환 전략 최고 책임자(CFO)야.
+아래 데이터를 보고 우리 회사가 이번 주에 취해야 할 최적의 외환 전략을 자율적으로 판단해.
+
+핵심 과제:
+1) USD 유동성 리스크가 있는지 진단할 것.
+2) CNY를 환전할 때, KRW로 바꿔서 확정 이익을 챙기는 게 나을지, USD로 바꿔서 미래 비용을 절감하는 게 나을지 직접 판단할 것.
+3) 채무(AP)를 먼저 제외하고 남는 여유분으로 어떤 통화를 사는 게 가장 이득인지 제안할 것.
+
+작성 규칙:
+- 결론부터 말하고, 근거가 된 숫자를 문장에 포함할 것.
+- 마크다운 형식 사용 (볼드, 불렛포인트).
+- 전문적이되 간결하게 (300자 이내).
+- 한국어로 작성.""",
+            messages=[{"role": "user", "content": context}],
         )
-    else:
-        strategy_lines.append(
-            f"CNY/KRW 현재 환율({cny_mkt:,.2f}원)이 장부가({cny_book:,.2f}원)보다 낮아 "
-            f"원화 환전 시 **{cny_pnl_krw:+,.0f}원** 환차손 발생. 환전 보류를 권장합니다."
-        )
+        return msg.content[0].text.strip()
+    except Exception as e:
+        return f"⚠️ AI 분석 실패: {e}"
 
-    # USD/CNY 재정환율 판단
-    if cross_rate > 0:
-        strategy_lines.append(
-            f"**USD/CNY** 재정환율 {cross_rate:.4f} 기준, CNY→USD 전환 시 "
-            f"**${cny_net/cross_rate:,.2f}** 확보 가능. "
-            + ("달러 수요가 예정되어 있다면 지금 위안화→달러 전환이 유리합니다." if usd_dir == "상승"
-               else "달러 약세 전망 시 서두를 필요 없습니다.")
-        )
-
-if usd_net > 0 and usd_book > 0:
-    usd_pnl = (usd_mkt - usd_book) * usd_net
-    strategy_lines.append(
-        f"**USD/KRW** 장부가({usd_book:,.2f}) 대비 현재({usd_mkt:,.2f}원), "
-        f"순 노출액 {usd_net:,.0f} USD 기준 환차손익 **{usd_pnl:+,.0f}원**."
-    )
-
-if not strategy_lines:
-    strategy_lines = ["순 노출액이 0 이하이거나 데이터가 부족하여 전략을 제안할 수 없습니다."]
-
-# 최종 추천 한 줄
-if cny_net > 0 and cny_book > 0 and cny_mkt > cny_book:
-    if usd_dir == "상승":
-        top_rec = "이번 주는 CNY/USD 재정환율이 유리하므로, **원화 환전보다 달러 확보를 우선 추천**합니다."
-    else:
-        top_rec = "이번 주는 CNY/KRW 환율이 장부가 대비 유리하므로, **원화 환전으로 확정 수익 확보를 추천**합니다."
-else:
-    top_rec = "현재 환율 수준에서는 **환전 보류 및 관망**을 추천합니다."
+with st.spinner("AI가 외환 포지션을 분석하는 중..."):
+    ai_strategy = _ai_fx_strategy(summary_text)
 
 # ── UI 렌더링 ──
 
 # 최상단: AI 전략 제안
 with st.chat_message("assistant"):
-    st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{top_rec}")
+    st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{ai_strategy}")
 
 # 중단: 핵심 지표 카드
 mc1, mc2, mc3, mc4 = st.columns(4)
-
-cny_cash_val = cash_data.get("CNY", {}).get("금액", 0)
-cny_ar_val = float(ar_df[ar_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ar_df["통화"].values else 0
-cny_ap_val = float(ap_df[ap_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ap_df["통화"].values else 0
-
-mc1.metric("CNY 보유 현금", f"{cny_cash_val:,.0f}")
+mc1.metric("CNY 보유 현금", f"{cny_cash:,.0f}")
 mc2.metric("이번 주 채권(AR)", f"{cny_ar_val:,.0f}")
 mc3.metric("이번 주 채무(AP)", f"{cny_ap_val:,.0f}")
-net_color = "#C00000" if cny_net > 0 else "#4A90D9"
 mc4.metric("CNY 순 노출액", f"{cny_net:,.0f}")
-
-# 전략 상세
-for line in strategy_lines:
-    st.markdown(f"- {line}")
 
 # 하단: 상세 보유현황 테이블 (접힘)
 with st.expander("📋 상세 보유현황 테이블"):

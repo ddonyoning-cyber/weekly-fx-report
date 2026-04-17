@@ -383,7 +383,7 @@ JSON만 출력하고 다른 설명은 하지 마세요."""
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-sonnet-4-5-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1111,7 +1111,7 @@ def _ai_fx_strategy(context: str) -> str:
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-sonnet-4-5-20250514",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=2000,
             system="""너는 글로벌 기업의 외환 전략 최고 책임자(CFO)야.
 아래 데이터를 보고 우리 회사가 이번 주에 취해야 할 최적의 외환 전략을 자율적으로 판단해.
@@ -1141,12 +1141,20 @@ with st.spinner("AI가 외환 포지션을 분석하는 중..."):
 with st.chat_message("assistant"):
     st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{ai_strategy}")
 
-# 중단: 핵심 지표 카드
-mc1, mc2, mc3, mc4 = st.columns(4)
-mc1.metric("CNY 보유 현금", f"{cny_cash:,.0f}")
-mc2.metric("이번 주 채권(AR)", f"{cny_ar_val:,.0f}")
-mc3.metric("이번 주 채무(AP)", f"{cny_ap_val:,.0f}")
-mc4.metric("CNY 순 노출액", f"{cny_net:,.0f}")
+# 중단: 핵심 지표 카드 (USD / CNY 분리)
+st.markdown("**USD 포지션**")
+u1, u2, u3, u4 = st.columns(4)
+u1.metric("보유 현금", f"${usd_cash:,.0f}")
+u2.metric("채권(AR)", f"${usd_ar_val:,.0f}")
+u3.metric("채무(AP)", f"${usd_ap_val:,.0f}")
+u4.metric("순 노출액", f"${usd_net:,.0f}")
+
+st.markdown("**CNY 포지션**")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("보유 현금", f"¥{cny_cash:,.0f}")
+c2.metric("채권(AR)", f"¥{cny_ar_val:,.0f}")
+c3.metric("채무(AP)", f"¥{cny_ap_val:,.0f}")
+c4.metric("순 노출액", f"¥{cny_net:,.0f}")
 
 # 하단: 상세 보유현황 테이블 (접힘)
 with st.expander("📋 상세 보유현황 테이블"):
@@ -1299,10 +1307,10 @@ def _run_simulator():
     """시뮬레이터만 독립 리렌더링 (페이지 전체 리로드 방지)."""
 
     # 엑셀에서 CNY 보유 데이터
-    cny_rows = [i for i, c in enumerate(holdings_df["통화"].tolist()) if str(c).upper() == "CNY"]
+    cny_rows = [i for i, c in enumerate(cash_df["통화"].tolist()) if str(c).upper() == "CNY"]
     if cny_rows:
-        sim_cny = float(str(holdings_df.iloc[cny_rows[0]]["보유금액"]).replace(",", ""))
-        sim_book = float(str(holdings_df.iloc[cny_rows[0]]["보유환율"]).replace(",", ""))
+        sim_cny = float(str(cash_df.iloc[cny_rows[0]]["금액"]).replace(",", ""))
+        sim_book = float(str(cash_df.iloc[cny_rows[0]]["보유환율"]).replace(",", ""))
     else:
         sim_cny = 30000000.0
         sim_book = 198.50

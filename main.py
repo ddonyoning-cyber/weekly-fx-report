@@ -381,9 +381,9 @@ JSON만 출력하고 다른 설명은 하지 마세요."""
 
     try:
         from anthropic import Anthropic
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-sonnet-4-5",
+            model="claude-sonnet-4-5-20250514",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1013,88 +1013,186 @@ def _forecast_card(label, band_str, direction, sub=""):
         f'</div>'
     )
 
-# ── 사이드바: 외화 보유 데이터 업로드 ──
+# ── 사이드바: 외화 데이터 업로드 ──
 with st.sidebar:
-    st.subheader("외화 보유 데이터")
-    uploaded = st.file_uploader("Excel/CSV 업로드", type=["xlsx", "csv"])
+    st.subheader("외화 데이터 업로드")
+    uploaded_cash = st.file_uploader("보유 현금 (Excel/CSV)", type=["xlsx", "csv"], key="cash")
+    uploaded_ar = st.file_uploader("이번 주 채권 AR (Excel/CSV)", type=["xlsx", "csv"], key="ar")
+    uploaded_ap = st.file_uploader("이번 주 채무 AP (Excel/CSV)", type=["xlsx", "csv"], key="ap")
+    st.caption("컬럼: 통화, 금액, 보유환율(현금만)")
+
+def _load_fx_data(uploaded, default_data, has_rate=False):
     if uploaded:
-        holdings_df = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
-    else:
-        holdings_df = pd.DataFrame({
-            "통화": pd.array(["USD", "CNY"], dtype="object"),
-            "보유금액": pd.array([5000000.0, 30000000.0], dtype="float64"),
-            "보유환율": pd.array([1450.00, 198.50], dtype="float64"),
-        })
-    st.caption("컬럼: 통화, 보유금액, 보유환율")
+        d = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
+        d["금액"] = [float(str(x).replace(",", "")) for x in d["금액"].tolist()]
+        if has_rate and "보유환율" in d.columns:
+            d["보유환율"] = [float(str(x).replace(",", "")) for x in d["보유환율"].tolist()]
+        return d
+    return default_data
+
+cash_df = _load_fx_data(uploaded_cash, pd.DataFrame({
+    "통화": ["USD", "CNY"], "금액": [5000000.0, 30000000.0], "보유환율": [1450.00, 198.50],
+}), has_rate=True)
+
+ar_df = _load_fx_data(uploaded_ar, pd.DataFrame({
+    "통화": ["USD", "CNY"], "금액": [0.0, 0.0],
+}))
+
+ap_df = _load_fx_data(uploaded_ap, pd.DataFrame({
+    "통화": ["USD", "CNY"], "금액": [0.0, 0.0],
+}))
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 섹션 1: 당사 외화 보유 현황
+# 섹션 1: 주간 외환 관리 가이드라인
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 latest_date = df.index[-1].strftime("%Y-%m-%d")
-st.markdown(f'<div class="section-header">1. 당사 외화 보유 현황 (매매기준율: {latest_date})</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="section-header">1. 주간 외환 관리 가이드라인 ({latest_date} 기준)</div>', unsafe_allow_html=True)
 
-rate_map = {"USD": latest["USD_KRW"], "CNY": latest["CNY_KRW"]}
-h = holdings_df.copy()
-amt = [float(str(x).replace(",", "")) for x in h["보유금액"].tolist()]
-book = [float(str(x).replace(",", "")) for x in h["보유환율"].tolist()]
-mkt = [float(rate_map.get(c, 0)) for c in h["통화"].tolist()]
-pnl = [(m - b) * a for m, b, a in zip(mkt, book, amt)]
-h["보유금액"] = amt
-h["보유환율"] = book
-h["금일 매매기준율"] = mkt
-h["외환차손익(원)"] = pnl
+# ── 순 노출액 계산 ──
+rate_map = {"USD": float(latest["USD_KRW"]), "CNY": float(latest["CNY_KRW"])}
+net_exposure = {}
+cash_data = {}
+for _, row in cash_df.iterrows():
+    cur = str(row["통화"])
+    cash_data[cur] = {"금액": float(row["금액"]), "보유환율": float(row.get("보유환율", 0))}
+    net_exposure[cur] = float(row["금액"])
 
-# 원화환산금액 계산
-book_krw = [a * b for a, b in zip(amt, book)]   # 장부 기준
-mkt_krw = [a * m for a, m in zip(amt, mkt)]     # 당일 기준
-currencies = h["통화"].tolist()
+for _, row in ar_df.iterrows():
+    cur = str(row["통화"])
+    net_exposure[cur] = net_exposure.get(cur, 0) + float(row["금액"])
 
-rows_html = ""
-for i in range(len(currencies)):
-    p = pnl[i]
-    pc = "#C00000" if p > 0 else "#4A90D9"
-    rows_html += (
-        f'<tr>'
-        f'<td>{latest_date}</td>'
-        f'<td>{currencies[i]}</td>'
-        f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
-        f'<td style="text-align:right;">{book[i]:,.2f}</td>'
-        f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
-        f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
-        f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
-        f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td>'
-        f'</tr>'
+for _, row in ap_df.iterrows():
+    cur = str(row["통화"])
+    net_exposure[cur] = net_exposure.get(cur, 0) - float(row["금액"])
+
+# ── AI 전략 제안 생성 ──
+cny_cash = cash_data.get("CNY", {}).get("금액", 0)
+cny_book = cash_data.get("CNY", {}).get("보유환율", 0)
+cny_net = net_exposure.get("CNY", 0)
+usd_cash = cash_data.get("USD", {}).get("금액", 0)
+usd_book = cash_data.get("USD", {}).get("보유환율", 0)
+usd_net = net_exposure.get("USD", 0)
+
+cny_mkt = rate_map.get("CNY", 0)
+usd_mkt = rate_map.get("USD", 0)
+cross_rate = usd_mkt / cny_mkt if cny_mkt else 0
+
+# 전략 판단
+strategy_lines = []
+if cny_net > 0 and cny_book > 0:
+    cny_pnl_krw = (cny_mkt - cny_book) * cny_net
+    cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
+
+    # CNY→KRW vs CNY→USD 비교
+    if cny_mkt > cny_book:
+        strategy_lines.append(
+            f"**CNY/KRW** 현재 환율({cny_mkt:,.2f}원)이 장부가({cny_book:,.2f}원) 대비 "
+            f"**{cny_pnl_pct:+.2f}%** 유리합니다. "
+            f"순 노출액 {cny_net:,.0f} CNY 환전 시 약 **{cny_pnl_krw:+,.0f}원**의 환차익이 예상됩니다."
+        )
+    else:
+        strategy_lines.append(
+            f"CNY/KRW 현재 환율({cny_mkt:,.2f}원)이 장부가({cny_book:,.2f}원)보다 낮아 "
+            f"원화 환전 시 **{cny_pnl_krw:+,.0f}원** 환차손 발생. 환전 보류를 권장합니다."
+        )
+
+    # USD/CNY 재정환율 판단
+    if cross_rate > 0:
+        strategy_lines.append(
+            f"**USD/CNY** 재정환율 {cross_rate:.4f} 기준, CNY→USD 전환 시 "
+            f"**${cny_net/cross_rate:,.2f}** 확보 가능. "
+            + ("달러 수요가 예정되어 있다면 지금 위안화→달러 전환이 유리합니다." if usd_dir == "상승"
+               else "달러 약세 전망 시 서두를 필요 없습니다.")
+        )
+
+if usd_net > 0 and usd_book > 0:
+    usd_pnl = (usd_mkt - usd_book) * usd_net
+    strategy_lines.append(
+        f"**USD/KRW** 장부가({usd_book:,.2f}) 대비 현재({usd_mkt:,.2f}원), "
+        f"순 노출액 {usd_net:,.0f} USD 기준 환차손익 **{usd_pnl:+,.0f}원**."
     )
 
-total_pnl = sum(pnl)
-tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
+if not strategy_lines:
+    strategy_lines = ["순 노출액이 0 이하이거나 데이터가 부족하여 전략을 제안할 수 없습니다."]
 
-st.markdown(
-    f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:8px;">'
-    # 헤더 1행
-    f'<tr style="background:#f0f4ff;text-align:center;">'
-    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
-    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
-    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
-    f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
-    f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
-    f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
-    f'</tr>'
-    # 헤더 2행
-    f'<tr style="background:#f0f4ff;text-align:center;">'
-    f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-    f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-    f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
-    f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-    f'</tr>'
-    # 데이터
-    f'{rows_html}'
-    f'</table>'
-    # 합계
-    f'<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">'
-    f'현재기준 외환차손익 : {total_pnl:+,.0f}원</div>',
-    unsafe_allow_html=True,
-)
+# 최종 추천 한 줄
+if cny_net > 0 and cny_book > 0 and cny_mkt > cny_book:
+    if usd_dir == "상승":
+        top_rec = "이번 주는 CNY/USD 재정환율이 유리하므로, **원화 환전보다 달러 확보를 우선 추천**합니다."
+    else:
+        top_rec = "이번 주는 CNY/KRW 환율이 장부가 대비 유리하므로, **원화 환전으로 확정 수익 확보를 추천**합니다."
+else:
+    top_rec = "현재 환율 수준에서는 **환전 보류 및 관망**을 추천합니다."
+
+# ── UI 렌더링 ──
+
+# 최상단: AI 전략 제안
+with st.chat_message("assistant"):
+    st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{top_rec}")
+
+# 중단: 핵심 지표 카드
+mc1, mc2, mc3, mc4 = st.columns(4)
+
+cny_cash_val = cash_data.get("CNY", {}).get("금액", 0)
+cny_ar_val = float(ar_df[ar_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ar_df["통화"].values else 0
+cny_ap_val = float(ap_df[ap_df["통화"] == "CNY"]["금액"].sum()) if "CNY" in ap_df["통화"].values else 0
+
+mc1.metric("CNY 보유 현금", f"{cny_cash_val:,.0f}")
+mc2.metric("이번 주 채권(AR)", f"{cny_ar_val:,.0f}")
+mc3.metric("이번 주 채무(AP)", f"{cny_ap_val:,.0f}")
+net_color = "#C00000" if cny_net > 0 else "#4A90D9"
+mc4.metric("CNY 순 노출액", f"{cny_net:,.0f}")
+
+# 전략 상세
+for line in strategy_lines:
+    st.markdown(f"- {line}")
+
+# 하단: 상세 보유현황 테이블 (접힘)
+with st.expander("📋 상세 보유현황 테이블"):
+    # 기존 보유현황 테이블
+    amt = [cash_data.get(c, {}).get("금액", 0) for c in ["USD", "CNY"]]
+    book = [cash_data.get(c, {}).get("보유환율", 0) for c in ["USD", "CNY"]]
+    mkt = [rate_map.get(c, 0) for c in ["USD", "CNY"]]
+    pnl = [(m - b) * a for m, b, a in zip(mkt, book, amt)]
+    book_krw = [a * b for a, b in zip(amt, book)]
+    mkt_krw = [a * m for a, m in zip(amt, mkt)]
+    currencies = ["USD", "CNY"]
+
+    rows_html = ""
+    for i in range(len(currencies)):
+        p = pnl[i]
+        pc = "#C00000" if p > 0 else "#4A90D9"
+        rows_html += (
+            f'<tr><td>{latest_date}</td><td>{currencies[i]}</td>'
+            f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{book[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
+            f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
+            f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
+            f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td></tr>'
+        )
+    total_pnl = sum(pnl)
+    tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
+
+    st.markdown(
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th></tr>'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th></tr>'
+        f'{rows_html}</table>'
+        f'<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">'
+        f'현재기준 외환차손익 : {total_pnl:+,.0f}원</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

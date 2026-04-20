@@ -1300,23 +1300,28 @@ with tab_cny:
         pct_val = int(sim_pct.replace("%", "")) / 100
         sim_amt = cny_cash * pct_val
 
+        # 금주 전망 중간값 (시뮬 적용)
+        cny_fcst = (cny_lo + cny_hi) / 2
+        usd_fcst = (usd_lo + usd_hi) / 2
+        cross_fcst = (cross_lo + cross_hi) / 2
+
         if sim_target == "KRW":
-            sim_pnl = (cny_mkt - cny_book) * sim_amt if cny_book else 0
-            sim_converted = sim_amt * cny_mkt
+            sim_pnl = (cny_fcst - cny_book) * sim_amt if cny_book else 0
+            sim_converted = sim_amt * cny_fcst
             converted_str = f"{sim_converted:,.0f} KRW"
             sim_label = f"환전 시뮬 ({sim_pct} → KRW)"
-            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → {sim_converted:,.0f}원"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → {sim_converted:,.0f}원 (금주 전망 중간 {cny_fcst:,.1f}원)"
+            sim_rate_display = cny_fcst
         else:
-            # CNY → USD: USD/CNY 재정환율로 환산
-            sim_usd = sim_amt / cross_rate if cross_rate else 0
-            # 환차익: 장부 KRW 환산 vs 현재 USD를 KRW로 다시 환산
+            sim_usd = sim_amt / cross_fcst if cross_fcst else 0
             book_krw_val = sim_amt * cny_book
-            mkt_usd_to_krw = sim_usd * usd_mkt
+            mkt_usd_to_krw = sim_usd * usd_fcst
             sim_pnl = mkt_usd_to_krw - book_krw_val
             sim_converted = sim_usd
             converted_str = f"${sim_usd:,.2f}"
             sim_label = f"환전 시뮬 ({sim_pct} → USD)"
-            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → ${sim_usd:,.2f} (재정환율 {cross_rate:.4f})"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → ${sim_usd:,.2f} (금주 전망 재정환율 {cross_fcst:.4f})"
+            sim_rate_display = cross_fcst
 
         def _f_amt(v): return f"{v:,.0f}" if v else "-"
         def _f_rate(v): return f"{v:,.2f}" if v else "-"
@@ -1328,7 +1333,7 @@ with tab_cny:
         rows = [
             ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
             ("현재 평가손익", "전량 평가 시", cny_cash, cny_book, cny_mkt, cny_pnl_total, False),
-            (sim_label, sim_sub, sim_amt, cny_book, cny_mkt, sim_pnl, True),
+            (sim_label, sim_sub, sim_amt, cny_book, sim_rate_display, sim_pnl, True),
         ]
 
         rows_html = ""

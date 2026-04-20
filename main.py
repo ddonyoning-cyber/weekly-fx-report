@@ -1365,17 +1365,16 @@ with tab_cny:
             if not v: return "-"
             return f"{v:,.4f}" if sim_target == "USD" else f"{v:,.2f}"
 
-        rows = [
-            ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
-            (cur_label, cur_sub, cny_cash, book_display, cur_rate_show, cur_pnl, False),
-            (sim_label, sim_sub, sim_amt, book_display, sim_rate_display, sim_pnl, True),
+        # 메인 표 (보유 현황 + 현재 평가손익)
+        main_rows = [
+            ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0),
+            (cur_label, cur_sub, cny_cash, book_display, cur_rate_show, cur_pnl),
         ]
 
         rows_html = ""
-        for label, sub, amt, book, mkt, pnl, is_sim in rows:
-            bg = "background:#fff7e6;" if is_sim else ""
+        for label, sub, amt, book, mkt, pnl in main_rows:
             rows_html += (
-                f'<tr style="{bg}">'
+                f'<tr>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_amt(amt)}</td>'
@@ -1413,6 +1412,56 @@ with tab_cny:
             f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
             f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
             f'</tr>{rows_html}</table>',
+            unsafe_allow_html=True
+        )
+
+        # ── 환전 시나리오 시뮬 표 ──
+        st.markdown(f"<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 환전 시나리오 시뮬레이션 — {sim_pct} → {sim_target}</div>", unsafe_allow_html=True)
+
+        # 시나리오: 최저 / 평균 / 최고
+        if sim_target == "KRW":
+            scenarios = [
+                ("최저 (밴드 하단)", float(cny_lo)),
+                ("평균 (중간값)", cny_fcst),
+                ("최고 (밴드 상단)", float(cny_hi)),
+            ]
+        else:
+            scenarios = [
+                ("최저 (밴드 하단)", float(cross_lo)),
+                ("평균 (중간값)", cross_fcst),
+                ("최고 (밴드 상단)", float(cross_hi)),
+            ]
+
+        sim_rows_html = ""
+        for sc_label, sc_rate in scenarios:
+            if sim_target == "KRW":
+                sc_pnl = (sc_rate - cny_book) * sim_amt if cny_book else 0
+            else:
+                sc_usd = sim_amt / sc_rate if sc_rate else 0
+                sc_book_krw = sim_amt * cny_book
+                sc_mkt_krw = sc_usd * usd_fcst
+                sc_pnl = sc_mkt_krw - sc_book_krw
+            sim_rows_html += (
+                f'<tr>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{sc_label}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sim_pct} 환전</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_amt(sim_amt)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_book(book_display)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate2(sc_rate)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(sc_pnl)}</td>'
+                f'</tr>'
+            )
+
+        st.markdown(
+            f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;margin-top:6px;">'
+            f'<tr style="background:#fff7e6;text-align:center;">'
+            f'<th style="padding:10px;border:1px solid #ddd;">시나리오</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">장부단가 ({book_label})</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
+            f'</tr>{sim_rows_html}</table>',
             unsafe_allow_html=True
         )
 

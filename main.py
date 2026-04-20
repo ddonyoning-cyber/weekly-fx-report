@@ -1173,47 +1173,39 @@ with st.chat_message("assistant"):
 
 st.markdown("")
 
-# 좌우 분할: USD 유동성 / CNY 수익 전략
-col_usd, col_cny = st.columns(2)
+# USD / CNY 탭 분리
+tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수익 전략"])
 
-with col_usd:
-    st.markdown(
-        '<div style="background:#f0f4ff;border-left:4px solid #2E75B6;padding:8px 14px;border-radius:6px;margin-bottom:8px;">'
-        '<b>🇺🇸 USD 유동성 진단</b></div>', unsafe_allow_html=True)
+with tab_usd:
     usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
-    u1, u2 = st.columns(2)
+    u1, u2, u3, u4 = st.columns(4)
     u1.metric("보유 현금", f"${usd_cash:,.0f}")
-    u2.metric("최종 순 노출액", f"${usd_net:,.0f}",
+    u2.metric("단기 AR/AP", f"+${usd_ar_short:,.0f} / -${usd_ap_short:,.0f}")
+    u3.metric("장기 AR/AP", f"+${usd_ar_long:,.0f} / -${usd_ap_long:,.0f}")
+    u4.metric("최종 순 노출액", f"${usd_net:,.0f}",
               delta="유동성 부족" if usd_liquidity < 0 else "유동성 양호",
               delta_color="inverse" if usd_liquidity < 0 else "normal")
-    u3, u4 = st.columns(2)
-    u3.metric("단기 AR/AP", f"+${usd_ar_short:,.0f} / -${usd_ap_short:,.0f}")
-    u4.metric("장기 AR/AP", f"+${usd_ar_long:,.0f} / -${usd_ap_long:,.0f}")
 
     if usd_liquidity < 0:
         st.markdown(
-            f'<div style="margin-top:8px;padding:10px 14px;background:#fdf2f2;border-left:3px solid #C00000;border-radius:6px;font-size:0.88rem;">'
-            f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 ${abs(usd_liquidity):,.0f} 부족'
+            f'<div style="margin-top:12px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
+            f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 <b>${abs(usd_liquidity):,.0f}</b> 부족'
             f'</div>', unsafe_allow_html=True)
     else:
         st.markdown(
-            f'<div style="margin-top:8px;padding:10px 14px;background:#f0fdf4;border-left:3px solid #2E8B57;border-radius:6px;font-size:0.88rem;">'
-            f'✅ <b>유동성 양호</b>: 단기 여유 ${usd_liquidity:,.0f}'
+            f'<div style="margin-top:12px;padding:12px 16px;background:#f0fdf4;border-left:4px solid #2E8B57;border-radius:6px;font-size:0.9rem;">'
+            f'✅ <b>유동성 양호</b>: 단기 여유 <b>${usd_liquidity:,.0f}</b>'
             f'</div>', unsafe_allow_html=True)
 
-with col_cny:
-    st.markdown(
-        '<div style="background:#fdf8f0;border-left:4px solid #e6a817;padding:8px 14px;border-radius:6px;margin-bottom:8px;">'
-        '<b>🇨🇳 CNY 수익 전략</b></div>', unsafe_allow_html=True)
+with tab_cny:
     cny_pnl_per = (cny_mkt - cny_book) if cny_book else 0
     cny_pnl_total = cny_pnl_per * cny_cash
     cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
 
-    cc1, cc2 = st.columns(2)
+    cc1, cc2, cc3, cc4 = st.columns(4)
     cc1.metric("현재 보유 잔액", f"¥{cny_cash:,.0f}")
     cc2.metric("당일 매매기준율", f"{cny_mkt:,.2f}원",
                delta=f"{cny_pnl_pct:+.2f}% vs 장부", delta_color="inverse")
-    cc3, cc4 = st.columns(2)
     cc3.metric("장부단가", f"{cny_book:,.2f}원")
     pnl_color_str = "+" if cny_pnl_total >= 0 else ""
     cc4.metric("잠재 환차익", f"{pnl_color_str}{cny_pnl_total:,.0f}원",

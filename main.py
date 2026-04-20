@@ -1499,14 +1499,24 @@ with tab_cny:
         else:
             converted_str = f"${sim_amt / sc_mid_rate if sc_mid_rate else 0:,.2f}"
 
-        # 최대 환차익 강조
-        max_pnl_color = "#C00000" if cny_pnl_total > 0 else "#4A90D9"
+        # 최대 환차익 강조 (선택 통화 기준 동적 계산)
+        if sim_target == "KRW":
+            max_pnl_v = (cny_fcst - cny_book) * cny_cash if cny_book else 0
+            max_pnl_pct = (cny_fcst - cny_book) / cny_book * 100 if cny_book else 0
+            max_label = "전량 KRW 환전 기준 (금주 전망 평균)"
+        else:
+            usd_eq_full = cny_cash / cross_fcst if cross_fcst else 0
+            max_pnl_v = usd_eq_full * usd_fcst - cny_cash * cny_book
+            max_pnl_pct = (max_pnl_v / (cny_cash * cny_book)) * 100 if (cny_cash * cny_book) else 0
+            max_label = "전량 USD 환전 기준 (금주 전망 평균)"
+
+        max_pnl_color = "#C00000" if max_pnl_v > 0 else "#4A90D9"
         sim_pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
         st.markdown(
             f'<div style="margin-top:12px;padding:14px 18px;background:#fdf8f0;border-left:4px solid #e6a817;border-radius:6px;">'
-            f'<div style="font-size:0.85rem;color:#666;">💎 최대 환차익 확보 가능액 (전량 KRW 환전 기준)</div>'
+            f'<div style="font-size:0.85rem;color:#666;">💎 최대 환차익 확보 가능액 ({max_label})</div>'
             f'<div style="font-size:1.4rem;font-weight:800;color:{max_pnl_color};margin-top:4px;">'
-            f'{cny_pnl_total:+,.0f}원 <span style="font-size:0.9rem;color:#888;">({cny_pnl_pct:+.2f}%)</span></div>'
+            f'{max_pnl_v:+,.0f}원 <span style="font-size:0.9rem;color:#888;">({max_pnl_pct:+.2f}%)</span></div>'
             f'<div style="font-size:0.85rem;color:#444;margin-top:6px;">'
             f'선택: {sim_pct} → {sim_target} 환전 시 → '
             f'<b>{converted_str}</b> 확보 / '

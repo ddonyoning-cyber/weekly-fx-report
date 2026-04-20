@@ -1286,40 +1286,78 @@ with tab_usd:
             f'</div>', unsafe_allow_html=True)
 
 with tab_cny:
-    cny_book_krw = cny_cash * cny_book
-    cny_mkt_krw = cny_cash * cny_mkt
-    cny_pnl_v = (cny_mkt - cny_book) * cny_cash
-    cny_pnl_color = "#C00000" if cny_pnl_v > 0 else "#4A90D9"
+    cny_pnl_total = (cny_mkt - cny_book) * cny_cash if cny_book else 0
+    cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
 
-    st.markdown(
-        f'<table style="width:100%;border-collapse:collapse;font-size:0.88rem;border:1px solid #ddd;">'
-        f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
-        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
-        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
-        f'</tr>'
-        f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-        f'</tr>'
-        f'<tr style="text-align:center;">'
-        f'<td style="padding:8px;border:1px solid #eee;">{latest_date}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;font-weight:700;">CNY</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_cash:,.2f}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_book:,.2f}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_book_krw:,.0f}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_mkt:,.2f}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_mkt_krw:,.0f}</td>'
-        f'<td style="padding:8px;border:1px solid #eee;text-align:right;font-weight:700;color:{cny_pnl_color};">{cny_pnl_v:+,.0f}</td>'
-        f'</tr>'
-        f'</table>',
-        unsafe_allow_html=True
-    )
+    @st.fragment
+    def _run_cny_tab():
+        # 환전 비중 선택
+        sim_pct = st.select_slider(
+            "환전 비중", options=["30%", "50%", "70%", "100%"], value="100%",
+            key="cny_sim_pct"
+        )
+        pct_val = int(sim_pct.replace("%", "")) / 100
+        sim_amt = cny_cash * pct_val
+        sim_pnl = (cny_mkt - cny_book) * sim_amt if cny_book else 0
+        sim_krw = sim_amt * cny_mkt
+
+        # 행 데이터: (항목, 구분, 금액, 장부단가, 현재환율, 외환차손익)
+        def _f_amt(v): return f"{v:,.0f}" if v else "-"
+        def _f_rate(v): return f"{v:,.2f}" if v else "-"
+        def _f_pnl(v):
+            if v == 0: return "-"
+            color = "#C00000" if v > 0 else "#4A90D9"
+            return f'<span style="color:{color};font-weight:700;">{v:+,.0f}</span>'
+
+        rows = [
+            ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
+            ("단가 분석", "장부 vs 현재", 0, cny_book, cny_mkt, 0, False),
+            ("현재 평가손익", "전량 평가 시", cny_cash, cny_book, cny_mkt, cny_pnl_total, False),
+            (f"환전 시뮬 ({sim_pct})", f"환전 예정액 {sim_amt:,.0f} CNY", sim_amt, cny_book, cny_mkt, sim_pnl, True),
+        ]
+
+        rows_html = ""
+        for label, sub, amt, book, mkt, pnl, is_sim in rows:
+            bg = "background:#fff7e6;" if is_sim else ""
+            rows_html += (
+                f'<tr style="{bg}">'
+                f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_amt(amt)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate(book)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate(mkt)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(pnl)}</td>'
+                f'</tr>'
+            )
+
+        st.markdown(
+            f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
+            f'<tr style="background:#f0f4ff;text-align:center;">'
+            f'<th style="padding:10px;border:1px solid #ddd;">항목 (CNY)</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">장부단가</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">현재환율</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
+            f'</tr>{rows_html}</table>',
+            unsafe_allow_html=True
+        )
+
+        # 최대 환차익 강조
+        max_pnl_color = "#C00000" if cny_pnl_total > 0 else "#4A90D9"
+        st.markdown(
+            f'<div style="margin-top:12px;padding:14px 18px;background:#fdf8f0;border-left:4px solid #e6a817;border-radius:6px;">'
+            f'<div style="font-size:0.85rem;color:#666;">💎 최대 환차익 확보 가능액 (전량 환전 기준)</div>'
+            f'<div style="font-size:1.4rem;font-weight:800;color:{max_pnl_color};margin-top:4px;">'
+            f'{cny_pnl_total:+,.0f}원 <span style="font-size:0.9rem;color:#888;">({cny_pnl_pct:+.2f}%)</span></div>'
+            f'<div style="font-size:0.85rem;color:#444;margin-top:6px;">'
+            f'선택 비중 <b>{sim_pct}</b> 환전 시 → <b style="color:{max_pnl_color};">{sim_pnl:+,.0f}원</b> 확정 수익 '
+            f'(환전 금액: {sim_krw:,.0f}원)'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
+
+    _run_cny_tab()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

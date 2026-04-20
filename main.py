@@ -1425,52 +1425,66 @@ with tab_cny:
         pct_val = int(sim_pct.replace("%", "")) / 100
         sim_amt = cny_cash * pct_val
 
-        # 시나리오: 최저 / 평균 / 최고
+        # 시나리오 계산 (3개)
         if sim_target == "KRW":
-            scenarios = [
-                ("최저 (밴드 하단)", float(cny_lo)),
-                ("평균 (중간값)", cny_fcst),
-                ("최고 (밴드 상단)", float(cny_hi)),
-            ]
+            sc_low_rate, sc_mid_rate, sc_hi_rate = float(cny_lo), cny_fcst, float(cny_hi)
         else:
-            scenarios = [
-                ("최저 (밴드 하단)", float(cross_lo)),
-                ("평균 (중간값)", cross_fcst),
-                ("최고 (밴드 상단)", float(cross_hi)),
-            ]
+            sc_low_rate, sc_mid_rate, sc_hi_rate = float(cross_lo), cross_fcst, float(cross_hi)
 
-        sim_rows_html = ""
-        for sc_label, sc_rate in scenarios:
+        def _calc_pnl(rate):
             if sim_target == "KRW":
-                sc_pnl = (sc_rate - cny_book) * sim_amt if cny_book else 0
-            else:
-                sc_usd = sim_amt / sc_rate if sc_rate else 0
-                sc_book_krw = sim_amt * cny_book
-                sc_mkt_krw = sc_usd * usd_fcst
-                sc_pnl = sc_mkt_krw - sc_book_krw
-            sim_rows_html += (
-                f'<tr>'
-                f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{sc_label}</td>'
+                return (rate - cny_book) * sim_amt if cny_book else 0
+            sc_usd = sim_amt / rate if rate else 0
+            return (sc_usd * usd_fcst) - (sim_amt * cny_book)
+
+        def _row_html(label, rate, bg=""):
+            pnl = _calc_pnl(rate)
+            return (
+                f'<tr style="{bg}">'
+                f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sim_pct} 환전</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_amt(sim_amt)}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_book(book_display)}</td>'
-                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate2(sc_rate)}</td>'
-                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(sc_pnl)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate2(rate)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(pnl)}</td>'
                 f'</tr>'
             )
 
+        def _sim_table(rows_html):
+            return (
+                f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;margin-top:6px;">'
+                f'<tr style="background:#fff7e6;text-align:center;">'
+                f'<th style="padding:10px;border:1px solid #ddd;">시나리오</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">장부단가 ({book_label})</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
+                f'</tr>{rows_html}</table>'
+            )
+
+        # 메인: 평균(중간값)만 표시
         st.markdown(
-            f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;margin-top:6px;">'
-            f'<tr style="background:#fff7e6;text-align:center;">'
-            f'<th style="padding:10px;border:1px solid #ddd;">시나리오</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">장부단가 ({book_label})</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
-            f'</tr>{sim_rows_html}</table>',
+            _sim_table(_row_html("평균 (중간값)", sc_mid_rate)),
             unsafe_allow_html=True
         )
+
+        # 토글: 최저/최고 시나리오 상세
+        with st.expander("▶ 환율 변동 시나리오 상세보기"):
+            st.markdown(
+                _sim_table(
+                    _row_html("최저 (밴드 하단)", sc_low_rate) +
+                    _row_html("최고 (밴드 상단)", sc_hi_rate)
+                ),
+                unsafe_allow_html=True
+            )
+
+        # 시뮬 환차손익 (강조용 변수)
+        sim_pnl = _calc_pnl(sc_mid_rate)
+        if sim_target == "KRW":
+            converted_str = f"{sim_amt * sc_mid_rate:,.0f} KRW"
+        else:
+            converted_str = f"${sim_amt / sc_mid_rate if sc_mid_rate else 0:,.2f}"
 
         # 최대 환차익 강조
         max_pnl_color = "#C00000" if cny_pnl_total > 0 else "#4A90D9"

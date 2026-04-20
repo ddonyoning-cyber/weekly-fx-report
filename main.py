@@ -1469,7 +1469,7 @@ with tab_cny:
                 f'<tr style="background:#fff7e6;text-align:center;">'
                 f'<th style="padding:10px;border:1px solid #ddd;">시나리오</th>'
                 f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
-                f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
+                f'<th style="padding:10px;border:1px solid #ddd;">금액(CNY)</th>'
                 f'<th style="padding:10px;border:1px solid #ddd;">장부단가 ({book_label})</th>'
                 f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
                 f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'

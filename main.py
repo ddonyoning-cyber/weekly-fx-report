@@ -1291,11 +1291,10 @@ with tab_cny:
 
     @st.fragment
     def _run_cny_tab():
-        opt1, opt2 = st.columns(2)
-        with opt1:
-            sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True, key="cny_target")
-        with opt2:
-            sim_pct = st.radio("환전 비중", ["30%", "50%", "70%", "100%"], horizontal=True, index=3, key="cny_pct")
+        # 라디오는 시나리오 시뮬 표 바로 위로 이동 (아래쪽에서 사용)
+        # 여기서는 기본값으로 초기화만
+        sim_target = st.session_state.get("cny_target", "KRW")
+        sim_pct = st.session_state.get("cny_pct", "100%")
 
         pct_val = int(sim_pct.replace("%", "")) / 100
         sim_amt = cny_cash * pct_val
@@ -1416,7 +1415,15 @@ with tab_cny:
         )
 
         # ── 환전 시나리오 시뮬 표 ──
-        st.markdown(f"<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 환전 시나리오 시뮬레이션 — {sim_pct} → {sim_target}</div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 환전 시나리오 시뮬레이션</div>", unsafe_allow_html=True)
+        opt1, opt2 = st.columns(2)
+        with opt1:
+            sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True, key="cny_target")
+        with opt2:
+            sim_pct = st.radio("환전 비중", ["30%", "50%", "70%", "100%"], horizontal=True, index=3, key="cny_pct")
+        # 변경된 값 반영
+        pct_val = int(sim_pct.replace("%", "")) / 100
+        sim_amt = cny_cash * pct_val
 
         # 시나리오: 최저 / 평균 / 최고
         if sim_target == "KRW":

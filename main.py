@@ -1305,6 +1305,16 @@ with tab_cny:
         usd_fcst = (usd_lo + usd_hi) / 2
         cross_fcst = (cross_lo + cross_hi) / 2
 
+        # 장부단가 (USD 선택 시 재정환율로 환산)
+        if sim_target == "KRW":
+            book_display = cny_book  # CNY/KRW
+            book_label = "원/위안"
+        else:
+            # CNY 장부단가(KRW)를 USD/CNY로 변환: 보유 CNY → USD 환산 평균 단가
+            # 장부 USD 단가 = 장부 CNY/KRW ÷ 현재 USD/KRW (대략)
+            book_display = (1 / (cny_book / usd_mkt)) if (cny_book and usd_mkt) else 0
+            book_label = "USD/CNY"
+
         if sim_target == "KRW":
             sim_pnl = (cny_fcst - cny_book) * sim_amt if cny_book else 0
             sim_converted = sim_amt * cny_fcst
@@ -1345,10 +1355,20 @@ with tab_cny:
             cur_sub = f"전량 환전 시 ${usd_equiv:,.2f} (재정환율 {cross_rate:.4f})"
             cur_rate_show = cross_rate
 
+        # 장부단가 표시 포맷 (KRW: 1234.56, USD: 0.1234)
+        def _f_book(v):
+            if not v: return "-"
+            return f"{v:,.4f}" if sim_target == "USD" else f"{v:,.2f}"
+
+        # 적용환율 표시 포맷
+        def _f_rate2(v):
+            if not v: return "-"
+            return f"{v:,.4f}" if sim_target == "USD" else f"{v:,.2f}"
+
         rows = [
             ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
-            (cur_label, cur_sub, cny_cash, cny_book, cur_rate_show, cur_pnl, False),
-            (sim_label, sim_sub, sim_amt, cny_book, sim_rate_display, sim_pnl, True),
+            (cur_label, cur_sub, cny_cash, book_display, cur_rate_show, cur_pnl, False),
+            (sim_label, sim_sub, sim_amt, book_display, sim_rate_display, sim_pnl, True),
         ]
 
         rows_html = ""
@@ -1359,8 +1379,8 @@ with tab_cny:
                 f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_amt(amt)}</td>'
-                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate(book)}</td>'
-                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate(mkt)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_book(book)}</td>'
+                f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate2(mkt)}</td>'
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(pnl)}</td>'
                 f'</tr>'
             )
@@ -1371,8 +1391,8 @@ with tab_cny:
             f'<th style="padding:10px;border:1px solid #ddd;">항목 (CNY)</th>'
             f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
             f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">장부단가</th>'
-            f'<th style="padding:10px;border:1px solid #ddd;">현재환율</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">장부단가 ({book_label})</th>'
+            f'<th style="padding:10px;border:1px solid #ddd;">적용환율 ({book_label})</th>'
             f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
             f'</tr>{rows_html}</table>',
             unsafe_allow_html=True

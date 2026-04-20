@@ -1330,9 +1330,24 @@ with tab_cny:
             color = "#C00000" if v > 0 else "#4A90D9"
             return f'<span style="color:{color};font-weight:700;">{v:+,.0f}</span>'
 
+        # 현재 평가손익 (환전 통화에 따라 분리)
+        if sim_target == "KRW":
+            cur_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
+            cur_label = "현재 평가손익 (→ KRW)"
+            cur_sub = f"전량 환전 시 KRW 환차손익"
+            cur_rate_show = cny_mkt
+        else:
+            usd_equiv = cny_cash / cross_rate if cross_rate else 0
+            book_krw_full = cny_cash * cny_book
+            mkt_usd_to_krw_full = usd_equiv * usd_mkt
+            cur_pnl = mkt_usd_to_krw_full - book_krw_full
+            cur_label = "현재 평가손익 (→ USD)"
+            cur_sub = f"전량 환전 시 ${usd_equiv:,.2f} (재정환율 {cross_rate:.4f})"
+            cur_rate_show = cross_rate
+
         rows = [
             ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
-            ("현재 평가손익", "전량 평가 시", cny_cash, cny_book, cny_mkt, cny_pnl_total, False),
+            (cur_label, cur_sub, cny_cash, cny_book, cur_rate_show, cur_pnl, False),
             (sim_label, sim_sub, sim_amt, cny_book, sim_rate_display, sim_pnl, True),
         ]
 

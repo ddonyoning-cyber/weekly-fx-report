@@ -1320,7 +1320,7 @@ with tab_cny:
             sim_converted = sim_amt * cny_fcst
             converted_str = f"{sim_converted:,.0f} KRW"
             sim_label = f"환전 시뮬 ({sim_pct} → KRW)"
-            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → {sim_converted:,.0f}원 (금주 전망 중간 {cny_fcst:,.1f}원)"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY"
             sim_rate_display = cny_fcst
         else:
             sim_usd = sim_amt / cross_fcst if cross_fcst else 0
@@ -1330,7 +1330,7 @@ with tab_cny:
             sim_converted = sim_usd
             converted_str = f"${sim_usd:,.2f}"
             sim_label = f"환전 시뮬 ({sim_pct} → USD)"
-            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → ${sim_usd:,.2f} (금주 전망 재정환율 {cross_fcst:.4f})"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → ${sim_usd:,.2f}"
             sim_rate_display = cross_fcst
 
         def _f_amt(v): return f"{v:,.0f}" if v else "-"
@@ -1344,7 +1344,7 @@ with tab_cny:
         if sim_target == "KRW":
             cur_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
             cur_label = "현재 평가손익 (→ KRW)"
-            cur_sub = f"전량 환전 시 KRW 환차손익"
+            cur_sub = "전량 환전 시"
             cur_rate_show = cny_mkt
         else:
             usd_equiv = cny_cash / cross_rate if cross_rate else 0
@@ -1352,7 +1352,7 @@ with tab_cny:
             mkt_usd_to_krw_full = usd_equiv * usd_mkt
             cur_pnl = mkt_usd_to_krw_full - book_krw_full
             cur_label = "현재 평가손익 (→ USD)"
-            cur_sub = f"전량 환전 시 ${usd_equiv:,.2f} (재정환율 {cross_rate:.4f})"
+            cur_sub = f"전량 환전 시 ${usd_equiv:,.2f}"
             cur_rate_show = cross_rate
 
         # 장부단가 표시 포맷 (KRW: 1234.56, USD: 0.1234)
@@ -1384,6 +1384,24 @@ with tab_cny:
                 f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_pnl(pnl)}</td>'
                 f'</tr>'
             )
+
+        # 적용 환율 정보 박스 (표 위)
+        if sim_target == "KRW":
+            rate_info = (
+                f'<b>당일 매매기준율</b>: {cny_mkt:,.2f}원 &nbsp;|&nbsp; '
+                f'<b>금주 전망 중간</b>: {cny_fcst:,.1f}원 (밴드 {cny_lo}~{cny_hi})'
+            )
+        else:
+            rate_info = (
+                f'<b>당일 재정환율</b>: {cross_rate:.4f} &nbsp;|&nbsp; '
+                f'<b>금주 전망 재정환율 중간</b>: {cross_fcst:.4f} (밴드 {cross_lo}~{cross_hi})'
+            )
+
+        st.markdown(
+            f'<div style="margin-bottom:10px;padding:10px 14px;background:#f0f4ff;border-radius:6px;font-size:0.85rem;color:#333;">'
+            f'📊 {rate_info}</div>',
+            unsafe_allow_html=True
+        )
 
         st.markdown(
             f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'

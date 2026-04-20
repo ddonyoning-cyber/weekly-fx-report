@@ -1307,7 +1307,7 @@ with tab_cny:
         # 장부단가 (USD 선택 시 재정환율로 환산)
         if sim_target == "KRW":
             book_display = cny_book  # CNY/KRW
-            book_label = "원/위안"
+            book_label = "KRW/CNY"
         else:
             # CNY 장부단가(KRW)를 USD/CNY로 변환: 보유 CNY → USD 환산 평균 단가
             # 장부 USD 단가 = 장부 CNY/KRW ÷ 현재 USD/KRW (대략)

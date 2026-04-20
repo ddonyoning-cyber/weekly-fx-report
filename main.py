@@ -1176,17 +1176,59 @@ st.markdown("")
 # USD / CNY 탭 분리
 tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수익 전략"])
 
+def _position_table(currency, cash_amt, book_rate, mkt_rate, ar_short, ar_long, ap_short, ap_long, symbol="$"):
+    """첨부 사진 양식의 보유현황 표."""
+    book_krw = cash_amt * book_rate
+    mkt_krw = cash_amt * mkt_rate
+    pnl = (mkt_rate - book_rate) * cash_amt
+    pnl_color = "#C00000" if pnl > 0 else "#4A90D9"
+    return (
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.88rem;border:1px solid #ddd;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">채권 (AR)</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">채무 (AP)</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
+        f'</tr>'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:6px;border:1px solid #ddd;">단기</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">장기</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">단기</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">장기</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'</tr>'
+        f'<tr style="text-align:center;">'
+        f'<td style="padding:8px;border:1px solid #eee;">{latest_date}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;font-weight:700;">{currency}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cash_amt:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{ar_short:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{ar_long:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{ap_short:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{ap_long:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{book_rate:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{book_krw:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{mkt_rate:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{mkt_krw:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;font-weight:700;color:{pnl_color};">{pnl:+,.0f}</td>'
+        f'</tr>'
+        f'</table>'
+    )
+
 with tab_usd:
+    st.markdown(
+        _position_table("USD", usd_cash, usd_book, usd_mkt,
+                        usd_ar_short, usd_ar_long, usd_ap_short, usd_ap_long, "$"),
+        unsafe_allow_html=True
+    )
+
     usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
-    u1, u2, u3 = st.columns(3)
-    u1.metric("보유 현금", f"${usd_cash:,.0f}")
-    u2.metric("채권 (단기 / 장기)", f"${usd_ar_short:,.0f} / ${usd_ar_long:,.0f}")
-    u3.metric("채무 (단기 / 장기)", f"${usd_ap_short:,.0f} / ${usd_ap_long:,.0f}")
-
-    st.metric("최종 순 노출액", f"${usd_net:,.0f}",
-              delta="유동성 부족" if usd_liquidity < 0 else "유동성 양호",
-              delta_color="inverse" if usd_liquidity < 0 else "normal")
-
     if usd_liquidity < 0:
         st.markdown(
             f'<div style="margin-top:12px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
@@ -1199,18 +1241,24 @@ with tab_usd:
             f'</div>', unsafe_allow_html=True)
 
 with tab_cny:
-    cny_pnl_per = (cny_mkt - cny_book) if cny_book else 0
-    cny_pnl_total = cny_pnl_per * cny_cash
-    cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
+    cny_ar_short_v = cny_ar_val
+    cny_ap_short_v = cny_ap_val
+    cny_ar_long_v = 0.0
+    cny_ap_long_v = 0.0
+    if "구분" in ar_df.columns:
+        sm = ar_df[(ar_df["통화"] == "CNY") & (ar_df["구분"].str.contains("장기|이후", na=False))]
+        cny_ar_long_v = float(sm["금액"].sum()) if not sm.empty else 0.0
+        cny_ar_short_v = cny_ar_val - cny_ar_long_v
+    if "구분" in ap_df.columns:
+        sm = ap_df[(ap_df["통화"] == "CNY") & (ap_df["구분"].str.contains("장기|이후", na=False))]
+        cny_ap_long_v = float(sm["금액"].sum()) if not sm.empty else 0.0
+        cny_ap_short_v = cny_ap_val - cny_ap_long_v
 
-    cc1, cc2, cc3, cc4 = st.columns(4)
-    cc1.metric("현재 보유 잔액", f"¥{cny_cash:,.0f}")
-    cc2.metric("당일 매매기준율", f"{cny_mkt:,.2f}원",
-               delta=f"{cny_pnl_pct:+.2f}% vs 장부", delta_color="inverse")
-    cc3.metric("장부단가", f"{cny_book:,.2f}원")
-    pnl_color_str = "+" if cny_pnl_total >= 0 else ""
-    cc4.metric("잠재 환차익", f"{pnl_color_str}{cny_pnl_total:,.0f}원",
-               delta_color="inverse")
+    st.markdown(
+        _position_table("CNY", cny_cash, cny_book, cny_mkt,
+                        cny_ar_short_v, cny_ar_long_v, cny_ap_short_v, cny_ap_long_v, "¥"),
+        unsafe_allow_html=True
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

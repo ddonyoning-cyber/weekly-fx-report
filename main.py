@@ -1222,14 +1222,59 @@ def _position_table(currency, cash_amt, book_rate, mkt_rate, ar_short, ar_long, 
     )
 
 with tab_usd:
+    usd_pnl_total = (usd_mkt - usd_book) * usd_cash if usd_book else 0
+    usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
+    net_warn = usd_liquidity < 0
+
+    # 행 데이터: (항목, 구분, 금액, 장부단가, 현재환율, 외환차손익, 강조여부)
+    def _fmt_amt(v): return f"{v:,.0f}" if v else "-"
+    def _fmt_rate(v): return f"{v:,.2f}" if v else "-"
+    def _fmt_pnl(v):
+        if v == 0: return "-"
+        color = "#C00000" if v > 0 else "#4A90D9"
+        return f'<span style="color:{color};font-weight:700;">{v:+,.0f}</span>'
+
+    rows = [
+        ("현금", "당사 보유 잔액", usd_cash, usd_book, usd_mkt, usd_pnl_total, False, False),
+        ("채권 (AR)", "단기 (이번 주/달)", usd_ar_short, 0, 0, 0, False, False),
+        ("채권 (AR)", "장기 (미결분)", usd_ar_long, 0, 0, 0, False, False),
+        ("채무 (AP)", "단기 (지급 예정)", usd_ap_short, 0, 0, 0, True, False),
+        ("채무 (AP)", "장기 (미결분)", usd_ap_long, 0, 0, 0, False, False),
+        ("합계 (Net)", "순 유동성", usd_liquidity, 0, 0, usd_pnl_total, False, net_warn),
+    ]
+
+    rows_html = ""
+    for label, sub, amt, book, mkt, pnl, is_ap, is_warn in rows:
+        bg = "background:#fdf2f2;" if is_warn else ""
+        amt_color = "color:#C00000;font-weight:700;" if (is_ap and amt > 0) else ""
+        amt_str = _fmt_amt(amt)
+        if amt < 0:
+            amt_color = "color:#C00000;font-weight:700;"
+        rows_html += (
+            f'<tr style="{bg}">'
+            f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
+            f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
+            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;{amt_color}">{amt_str}</td>'
+            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_rate(book)}</td>'
+            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_rate(mkt)}</td>'
+            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_pnl(pnl)}</td>'
+            f'</tr>'
+        )
+
     st.markdown(
-        _position_table("USD", usd_cash, usd_book, usd_mkt,
-                        usd_ar_short, usd_ar_long, usd_ap_short, usd_ap_long, "$"),
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:10px;border:1px solid #ddd;">항목 (USD)</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;">장부단가</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;">현재환율</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
+        f'</tr>{rows_html}</table>',
         unsafe_allow_html=True
     )
 
-    usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
-    if usd_liquidity < 0:
+    if net_warn:
         st.markdown(
             f'<div style="margin-top:12px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
             f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 <b>${abs(usd_liquidity):,.0f}</b> 부족'

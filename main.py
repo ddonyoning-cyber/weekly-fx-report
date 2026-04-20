@@ -1504,7 +1504,7 @@ with tab_cny:
         sim_pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
         st.markdown(
             f'<div style="margin-top:12px;padding:14px 18px;background:#fdf8f0;border-left:4px solid #e6a817;border-radius:6px;">'
-            f'<div style="font-size:0.85rem;color:#666;">💎 환차손익 ({sim_pct} → {sim_target} 환전 기준)</div>'
+            f'<div style="font-size:0.85rem;color:#666;">📈 예상 환차손익 ({sim_pct} → {sim_target})</div>'
             f'<div style="font-size:1.4rem;font-weight:800;color:{sim_pnl_color};margin-top:4px;">'
             f'{sim_pnl:+,.0f}원 <span style="font-size:0.9rem;color:#888;">({sim_pnl_pct:+.2f}%)</span></div>'
             f'<div style="font-size:0.85rem;color:#444;margin-top:6px;">'

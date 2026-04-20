@@ -1178,11 +1178,12 @@ tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수�
 
 with tab_usd:
     usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
-    u1, u2, u3, u4 = st.columns(4)
+    u1, u2, u3 = st.columns(3)
     u1.metric("보유 현금", f"${usd_cash:,.0f}")
-    u2.metric("단기 AR/AP", f"+${usd_ar_short:,.0f} / -${usd_ap_short:,.0f}")
-    u3.metric("장기 AR/AP", f"+${usd_ar_long:,.0f} / -${usd_ap_long:,.0f}")
-    u4.metric("최종 순 노출액", f"${usd_net:,.0f}",
+    u2.metric("채권 (단기 / 장기)", f"${usd_ar_short:,.0f} / ${usd_ar_long:,.0f}")
+    u3.metric("채무 (단기 / 장기)", f"${usd_ap_short:,.0f} / ${usd_ap_long:,.0f}")
+
+    st.metric("최종 순 노출액", f"${usd_net:,.0f}",
               delta="유동성 부족" if usd_liquidity < 0 else "유동성 양호",
               delta_color="inverse" if usd_liquidity < 0 else "normal")
 

@@ -1291,17 +1291,33 @@ with tab_cny:
 
     @st.fragment
     def _run_cny_tab():
-        # 환전 비중 선택
-        sim_pct = st.select_slider(
-            "환전 비중", options=["30%", "50%", "70%", "100%"], value="100%",
-            key="cny_sim_pct"
-        )
+        opt1, opt2 = st.columns(2)
+        with opt1:
+            sim_target = st.radio("환전 통화", ["KRW", "USD"], horizontal=True, key="cny_target")
+        with opt2:
+            sim_pct = st.radio("환전 비중", ["30%", "50%", "70%", "100%"], horizontal=True, index=3, key="cny_pct")
+
         pct_val = int(sim_pct.replace("%", "")) / 100
         sim_amt = cny_cash * pct_val
-        sim_pnl = (cny_mkt - cny_book) * sim_amt if cny_book else 0
-        sim_krw = sim_amt * cny_mkt
 
-        # 행 데이터: (항목, 구분, 금액, 장부단가, 현재환율, 외환차손익)
+        if sim_target == "KRW":
+            sim_pnl = (cny_mkt - cny_book) * sim_amt if cny_book else 0
+            sim_converted = sim_amt * cny_mkt
+            converted_str = f"{sim_converted:,.0f} KRW"
+            sim_label = f"환전 시뮬 ({sim_pct} → KRW)"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → {sim_converted:,.0f}원"
+        else:
+            # CNY → USD: USD/CNY 재정환율로 환산
+            sim_usd = sim_amt / cross_rate if cross_rate else 0
+            # 환차익: 장부 KRW 환산 vs 현재 USD를 KRW로 다시 환산
+            book_krw_val = sim_amt * cny_book
+            mkt_usd_to_krw = sim_usd * usd_mkt
+            sim_pnl = mkt_usd_to_krw - book_krw_val
+            sim_converted = sim_usd
+            converted_str = f"${sim_usd:,.2f}"
+            sim_label = f"환전 시뮬 ({sim_pct} → USD)"
+            sim_sub = f"환전 예정액 {sim_amt:,.0f} CNY → ${sim_usd:,.2f} (재정환율 {cross_rate:.4f})"
+
         def _f_amt(v): return f"{v:,.0f}" if v else "-"
         def _f_rate(v): return f"{v:,.2f}" if v else "-"
         def _f_pnl(v):
@@ -1311,9 +1327,8 @@ with tab_cny:
 
         rows = [
             ("보유 현황", "당사 보유 잔액", cny_cash, 0, 0, 0, False),
-            ("단가 분석", "장부 vs 현재", 0, cny_book, cny_mkt, 0, False),
             ("현재 평가손익", "전량 평가 시", cny_cash, cny_book, cny_mkt, cny_pnl_total, False),
-            (f"환전 시뮬 ({sim_pct})", f"환전 예정액 {sim_amt:,.0f} CNY", sim_amt, cny_book, cny_mkt, sim_pnl, True),
+            (sim_label, sim_sub, sim_amt, cny_book, cny_mkt, sim_pnl, True),
         ]
 
         rows_html = ""
@@ -1345,14 +1360,16 @@ with tab_cny:
 
         # 최대 환차익 강조
         max_pnl_color = "#C00000" if cny_pnl_total > 0 else "#4A90D9"
+        sim_pnl_color = "#C00000" if sim_pnl > 0 else "#4A90D9"
         st.markdown(
             f'<div style="margin-top:12px;padding:14px 18px;background:#fdf8f0;border-left:4px solid #e6a817;border-radius:6px;">'
-            f'<div style="font-size:0.85rem;color:#666;">💎 최대 환차익 확보 가능액 (전량 환전 기준)</div>'
+            f'<div style="font-size:0.85rem;color:#666;">💎 최대 환차익 확보 가능액 (전량 KRW 환전 기준)</div>'
             f'<div style="font-size:1.4rem;font-weight:800;color:{max_pnl_color};margin-top:4px;">'
             f'{cny_pnl_total:+,.0f}원 <span style="font-size:0.9rem;color:#888;">({cny_pnl_pct:+.2f}%)</span></div>'
             f'<div style="font-size:0.85rem;color:#444;margin-top:6px;">'
-            f'선택 비중 <b>{sim_pct}</b> 환전 시 → <b style="color:{max_pnl_color};">{sim_pnl:+,.0f}원</b> 확정 수익 '
-            f'(환전 금액: {sim_krw:,.0f}원)'
+            f'선택: {sim_pct} → {sim_target} 환전 시 → '
+            f'<b>{converted_str}</b> 확보 / '
+            f'<b style="color:{sim_pnl_color};">{sim_pnl:+,.0f}원</b> 환차손익'
             f'</div></div>',
             unsafe_allow_html=True
         )

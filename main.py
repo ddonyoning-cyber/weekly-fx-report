@@ -1102,6 +1102,30 @@ summary_text = f"""[당사 외화 포지션 현황 — {latest_date} 기준]
 - 금주 USD/KRW 전망: {usd_dir} ({usd_lo:,}~{usd_hi:,}원)
 - 금주 CNY/KRW 전망: {cny_dir} ({cny_lo:,}~{cny_hi:,}원)"""
 
+# ── 단기/장기 채권채무 분리 ──
+def _split_term(d):
+    """채권/채무를 단기(이번주)/장기(이후)로 분리."""
+    if "구분" in d.columns:
+        short = d[d["구분"].str.contains("단기|이번주", na=False)]
+        long = d[d["구분"].str.contains("장기|이후", na=False)]
+    else:
+        short = d
+        long = pd.DataFrame(columns=d.columns)
+    return short, long
+
+usd_ar_short = usd_ar_val
+usd_ap_short = usd_ap_val
+usd_ar_long = 0.0
+usd_ap_long = 0.0
+if "구분" in ar_df.columns:
+    sm = ar_df[(ar_df["통화"] == "USD") & (ar_df["구분"].str.contains("장기|이후", na=False))]
+    usd_ar_long = float(sm["금액"].sum()) if not sm.empty else 0.0
+    usd_ar_short = usd_ar_val - usd_ar_long
+if "구분" in ap_df.columns:
+    sm = ap_df[(ap_df["통화"] == "USD") & (ap_df["구분"].str.contains("장기|이후", na=False))]
+    usd_ap_long = float(sm["금액"].sum()) if not sm.empty else 0.0
+    usd_ap_short = usd_ap_val - usd_ap_long
+
 # ── Claude API 자율 분석 ──
 @st.cache_data(ttl=86400, show_spinner=False)
 def _ai_fx_strategy(context: str) -> str:
@@ -1111,21 +1135,27 @@ def _ai_fx_strategy(context: str) -> str:
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-latest",
             max_tokens=2000,
             system="""너는 글로벌 기업의 외환 전략 최고 책임자(CFO)야.
-아래 데이터를 보고 우리 회사가 이번 주에 취해야 할 최적의 외환 전략을 자율적으로 판단해.
+아래 데이터를 보고 '금주 외환 실행 전략 가이드'를 작성해.
 
-핵심 과제:
-1) USD 유동성 리스크가 있는지 진단할 것.
-2) CNY를 환전할 때, KRW로 바꿔서 확정 이익을 챙기는 게 나을지, USD로 바꿔서 미래 비용을 절감하는 게 나을지 직접 판단할 것.
-3) 채무(AP)를 먼저 제외하고 남는 여유분으로 어떤 통화를 사는 게 가장 이득인지 제안할 것.
+[자율 분석 미션]
+1) USD 유동성 진단:
+   - 단기 미결 채무가 보유 현금+단기 채권보다 크면 '🚨 즉시 달러 매수 필요' 경고를 생성.
+   - 순 노출액이 (-)면 부족분만큼 환전 권고.
 
-작성 규칙:
-- 결론부터 말하고, 근거가 된 숫자를 문장에 포함할 것.
-- 마크다운 형식 사용 (볼드, 불렛포인트).
-- 전문적이되 간결하게 (300자 이내).
-- 한국어로 작성.""",
+2) CNY 수익 전략 (보유 잔액 기준, 채권채무 무시):
+   - 환전 시점: 금주 환율 전망과 장부가 대비 현재 환율을 비교해 지금 환전이 적절한지 판단.
+   - 환전 비중: 보유 CNY의 몇 %를 환전할지 구체 수치 제안 (예: 30%, 50%, 100%).
+   - 환전 대상: KRW(즉시 환차익 확정) vs USD(미래 결제 대비 가성비) 중 어느 쪽이 외환차손익 극대화에 유리한지 비교 분석.
+
+[작성 규칙]
+- 두 섹션을 명확히 구분해서 작성:
+  ## 🚨 USD 유동성 진단
+  ## 💱 CNY 환전 전략
+- 결론부터 말하고, 근거 숫자를 반드시 포함.
+- 마크다운(볼드, 불렛). 한국어. 500자 이내.""",
             messages=[{"role": "user", "content": context}],
         )
         return msg.content[0].text.strip()
@@ -1139,52 +1169,55 @@ with st.spinner("AI가 외환 포지션을 분석하는 중..."):
 
 # 최상단: AI 전략 제안
 with st.chat_message("assistant"):
-    st.markdown(f"**🤖 AI 주간 외환 전략 제안**\n\n{ai_strategy}")
+    st.markdown(f"**🤖 금주 외환 실행 전략 가이드**\n\n{ai_strategy}")
 
-# 초소형 핵심 메트릭 (순 노출액 2개만)
-n1, n2 = st.columns(2)
-usd_net_color = "inverse" if usd_net >= 0 else "normal"
-cny_net_color = "inverse" if cny_net >= 0 else "normal"
-n1.metric("USD 순 노출액", f"${usd_net:,.0f}", delta=f"현금${usd_cash:,.0f} + AR${usd_ar_val:,.0f} - AP${usd_ap_val:,.0f}")
-n2.metric("CNY 순 노출액", f"¥{cny_net:,.0f}", delta=f"현금¥{cny_cash:,.0f} + AR¥{cny_ar_val:,.0f} - AP¥{cny_ap_val:,.0f}")
+st.markdown("")
 
-# 통화별 탭
-tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 관리", "🇨🇳 CNY 수익 전략"])
+# 좌우 분할: USD 유동성 / CNY 수익 전략
+col_usd, col_cny = st.columns(2)
 
-with tab_usd:
-    # USD 카드 4개
-    u1, u2, u3, u4 = st.columns(4)
+with col_usd:
+    st.markdown(
+        '<div style="background:#f0f4ff;border-left:4px solid #2E75B6;padding:8px 14px;border-radius:6px;margin-bottom:8px;">'
+        '<b>🇺🇸 USD 유동성 진단</b></div>', unsafe_allow_html=True)
+    usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
+    u1, u2 = st.columns(2)
     u1.metric("보유 현금", f"${usd_cash:,.0f}")
-    u2.metric("채권(AR)", f"${usd_ar_val:,.0f}")
-    u3.metric("채무(AP)", f"${usd_ap_val:,.0f}")
-    u4.metric("순 노출액", f"${usd_net:,.0f}")
+    u2.metric("최종 순 노출액", f"${usd_net:,.0f}",
+              delta="유동성 부족" if usd_liquidity < 0 else "유동성 양호",
+              delta_color="inverse" if usd_liquidity < 0 else "normal")
+    u3, u4 = st.columns(2)
+    u3.metric("단기 AR/AP", f"+${usd_ar_short:,.0f} / -${usd_ap_short:,.0f}")
+    u4.metric("장기 AR/AP", f"+${usd_ar_long:,.0f} / -${usd_ap_long:,.0f}")
 
-    # USD 보유현황 상세
-    usd_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
-    usd_pnl_color = "#C00000" if usd_pnl > 0 else "#4A90D9"
+    if usd_liquidity < 0:
+        st.markdown(
+            f'<div style="margin-top:8px;padding:10px 14px;background:#fdf2f2;border-left:3px solid #C00000;border-radius:6px;font-size:0.88rem;">'
+            f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 ${abs(usd_liquidity):,.0f} 부족'
+            f'</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f'<div style="margin-top:8px;padding:10px 14px;background:#f0fdf4;border-left:3px solid #2E8B57;border-radius:6px;font-size:0.88rem;">'
+            f'✅ <b>유동성 양호</b>: 단기 여유 ${usd_liquidity:,.0f}'
+            f'</div>', unsafe_allow_html=True)
+
+with col_cny:
     st.markdown(
-        f'<div style="margin-top:8px;padding:12px 16px;background:#f8f9fc;border-radius:8px;font-size:0.9rem;line-height:1.8;">'
-        f'현재 USD/KRW: <b>{usd_mkt:,.2f}원</b> · 장부단가: <b>{usd_book:,.2f}원</b><br>'
-        f'외환차손익: <span style="color:{usd_pnl_color};font-weight:700;">{usd_pnl:+,.0f}원</span>'
-        f'</div>', unsafe_allow_html=True)
+        '<div style="background:#fdf8f0;border-left:4px solid #e6a817;padding:8px 14px;border-radius:6px;margin-bottom:8px;">'
+        '<b>🇨🇳 CNY 수익 전략</b></div>', unsafe_allow_html=True)
+    cny_pnl_per = (cny_mkt - cny_book) if cny_book else 0
+    cny_pnl_total = cny_pnl_per * cny_cash
+    cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
 
-with tab_cny:
-    # CNY 카드 4개
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("보유 현금", f"¥{cny_cash:,.0f}")
-    c2.metric("채권(AR)", f"¥{cny_ar_val:,.0f}")
-    c3.metric("채무(AP)", f"¥{cny_ap_val:,.0f}")
-    c4.metric("순 노출액", f"¥{cny_net:,.0f}")
-
-    # CNY 보유현황 상세
-    cny_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
-    cny_pnl_color = "#C00000" if cny_pnl > 0 else "#4A90D9"
-    st.markdown(
-        f'<div style="margin-top:8px;padding:12px 16px;background:#fdf8f0;border-radius:8px;font-size:0.9rem;line-height:1.8;">'
-        f'현재 CNY/KRW: <b>{cny_mkt:,.2f}원</b> · 장부단가: <b>{cny_book:,.2f}원</b> · '
-        f'재정환율: <b>{cross_rate:.4f}</b><br>'
-        f'외환차손익: <span style="color:{cny_pnl_color};font-weight:700;">{cny_pnl:+,.0f}원</span>'
-        f'</div>', unsafe_allow_html=True)
+    cc1, cc2 = st.columns(2)
+    cc1.metric("현재 보유 잔액", f"¥{cny_cash:,.0f}")
+    cc2.metric("당일 매매기준율", f"{cny_mkt:,.2f}원",
+               delta=f"{cny_pnl_pct:+.2f}% vs 장부", delta_color="inverse")
+    cc3, cc4 = st.columns(2)
+    cc3.metric("장부단가", f"{cny_book:,.2f}원")
+    pnl_color_str = "+" if cny_pnl_total >= 0 else ""
+    cc4.metric("잠재 환차익", f"{pnl_color_str}{cny_pnl_total:,.0f}원",
+               delta_color="inverse")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -1241,22 +1241,38 @@ with tab_usd:
             f'</div>', unsafe_allow_html=True)
 
 with tab_cny:
-    cny_ar_short_v = cny_ar_val
-    cny_ap_short_v = cny_ap_val
-    cny_ar_long_v = 0.0
-    cny_ap_long_v = 0.0
-    if "구분" in ar_df.columns:
-        sm = ar_df[(ar_df["통화"] == "CNY") & (ar_df["구분"].str.contains("장기|이후", na=False))]
-        cny_ar_long_v = float(sm["금액"].sum()) if not sm.empty else 0.0
-        cny_ar_short_v = cny_ar_val - cny_ar_long_v
-    if "구분" in ap_df.columns:
-        sm = ap_df[(ap_df["통화"] == "CNY") & (ap_df["구분"].str.contains("장기|이후", na=False))]
-        cny_ap_long_v = float(sm["금액"].sum()) if not sm.empty else 0.0
-        cny_ap_short_v = cny_ap_val - cny_ap_long_v
+    cny_book_krw = cny_cash * cny_book
+    cny_mkt_krw = cny_cash * cny_mkt
+    cny_pnl_v = (cny_mkt - cny_book) * cny_cash
+    cny_pnl_color = "#C00000" if cny_pnl_v > 0 else "#4A90D9"
 
     st.markdown(
-        _position_table("CNY", cny_cash, cny_book, cny_mkt,
-                        cny_ar_short_v, cny_ar_long_v, cny_ap_short_v, cny_ap_long_v, "¥"),
+        f'<table style="width:100%;border-collapse:collapse;font-size:0.88rem;border:1px solid #ddd;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">날짜</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">통화</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
+        f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
+        f'</tr>'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'</tr>'
+        f'<tr style="text-align:center;">'
+        f'<td style="padding:8px;border:1px solid #eee;">{latest_date}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;font-weight:700;">CNY</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_cash:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_book:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_book_krw:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_mkt:,.2f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;">{cny_mkt_krw:,.0f}</td>'
+        f'<td style="padding:8px;border:1px solid #eee;text-align:right;font-weight:700;color:{cny_pnl_color};">{cny_pnl_v:+,.0f}</td>'
+        f'</tr>'
+        f'</table>',
         unsafe_allow_html=True
     )
 

@@ -1257,11 +1257,11 @@ with tab_usd:
 
     # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
     rows = [
-        ("보유현금", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
-        ("미결채권", "단기 (1년 이내)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
-        ("미결채권", "장기 (1년 이상)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
-        ("미결채무", "단기 (1년 이내)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
-        ("미결채무", "장기 (1년 이상)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
+        ("보유현금", "", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
+        ("미결채권", "단기", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
+        ("미결채권", "장기", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
+        ("미결채무", "단기", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
+        ("미결채무", "장기", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
 
     pnl_pct = (usd_mkt - usd_book) / usd_book * 100 if usd_book else 0
@@ -1324,25 +1324,26 @@ with tab_usd:
         f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
         # 헤더 1행
         f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목 (USD)</th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목</th>'
         f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">구분</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외화 금액</th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액(USD)</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준<br>외환차손익<br>'
-        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
         f'</tr>'
         # 헤더 2행 (장부/당일 하위)
         f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:6px;border:1px solid #ddd;">환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화금액<br>'
-        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화금액<br>'
-        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
         f'</tr>'
         f'{rows_html}'
-        f'</table>',
+        f'</table>'
+        f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 단기 : 1년 미만, 장기 : 1년 이상</div>',
         unsafe_allow_html=True
     )
 
@@ -1527,47 +1528,90 @@ with tab_cny:
             unsafe_allow_html=True
         )
 
-        # 장부 환산 / 당일 환산 KRW 금액
-        book_krw = cny_cash * cny_book if cny_book else 0
-        if sim_target == "KRW":
-            mkt_rate_v = cny_mkt
-            mkt_krw = cny_cash * cny_mkt
-        else:
-            usd_eq = cny_cash / cross_rate if cross_rate else 0
-            mkt_rate_v = cross_rate
-            mkt_krw = usd_eq * usd_mkt  # USD 환산 후 다시 KRW
+        # ── 메인 보유 현황 표 (KRW 기준 고정) ──
+        cny_cash_book_krw = cny_cash * cny_book if cny_book else 0
+        cny_cash_mkt_krw = cny_cash * cny_mkt
+        cny_ar_mkt_krw = cny_ar_val * cny_mkt
+        cny_ap_mkt_krw = cny_ap_val * cny_mkt
+        cny_net = cny_cash + cny_ar_val - cny_ap_val
+        cny_net_mkt_krw = cny_net * cny_mkt
+        cny_cash_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
 
-        pnl_full = mkt_krw - book_krw
-        pnl_color_v = "#C00000" if pnl_full > 0 else "#4A90D9"
-        pnl_str = f'<span style="color:{pnl_color_v};font-weight:700;">{pnl_full:+,.0f}</span>' if pnl_full else "-"
+        def _fc_amt(v):
+            if not v: return "-"
+            return f"{v:,.0f}"
+        def _fc_rate(v):
+            if not v: return "-"
+            if abs(v - round(v, 2)) < 1e-6 and v == int(v):
+                return f"{int(v):,}"
+            return f"{v:,.2f}"
+        def _fc_krw_mil(v):
+            if not v: return "-"
+            return f"{v / 1_000_000:,.0f}"
+        def _fc_pnl_mil(v):
+            if not v: return "-"
+            val = abs(v) / 1_000_000
+            if v > 0:
+                return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
+            return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
+
+        # 데이터 행: (항목, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
+        cny_rows = [
+            ("보유현금", cny_cash, cny_book, cny_cash_book_krw, cny_mkt, cny_cash_mkt_krw, cny_cash_pnl, False),
+            ("미결채권", cny_ar_val, 0, 0, cny_mkt, cny_ar_mkt_krw, 0, False),
+            ("미결채무", -cny_ap_val, 0, 0, cny_mkt, -cny_ap_mkt_krw, 0, True),
+        ]
+
+        cny_rows_html = ""
+        for label, amt, book, book_krw_v, mkt, mkt_krw_v, pnl, is_ap in cny_rows:
+            amt_color = "color:#C00000;" if (is_ap and amt < 0) else ""
+            cny_rows_html += (
+                f'<tr>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;text-align:center;">{label}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;{amt_color}">{_fc_amt(amt)}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_rate(book)}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_krw_mil(book_krw_v)}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_rate(mkt)}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_krw_mil(mkt_krw_v)}</td>'
+                f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_pnl_mil(pnl)}</td>'
+                f'</tr>'
+            )
+
+        # 순 노출금액 강조 행
+        cny_net_color = "color:#C00000;" if cny_net < 0 else ""
+        cny_rows_html += (
+            f'<tr style="background:#ececec;">'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;font-weight:700;font-size:1.05rem;text-align:center;">순노출금액</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;{cny_net_color}">{_fc_amt(cny_net)}</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;">{_fc_rate(cny_mkt)}</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;">{_fc_krw_mil(cny_net_mkt_krw)}</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-size:1.05rem;">{_fc_pnl_mil(cny_cash_pnl)}</td>'
+            f'</tr>'
+        )
 
         st.markdown(
             f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
             # 헤더 1행
             f'<tr style="background:#f0f4ff;text-align:center;">'
-            f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">항목 (CNY)</th>'
-            f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">보유금액</th>'
-            f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">장부 기준</th>'
-            f'<th colspan="2" style="padding:8px;border:1px solid #ddd;">당일 기준</th>'
-            f'<th rowspan="2" style="padding:8px;border:1px solid #ddd;">외환차손익(원)</th>'
+            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목</th>'
+            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액(CNY)</th>'
+            f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
+            f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
+            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+            f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
             f'</tr>'
-            # 헤더 2행
+            # 헤더 2행 (장부/당일 하위)
             f'<tr style="background:#f0f4ff;text-align:center;">'
             f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-            f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-            f'<th style="padding:6px;border:1px solid #ddd;">{"매매기준율" if sim_target == "KRW" else "재정환율"}</th>'
-            f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+            f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br>'
+            f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
+            f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
+            f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br>'
+            f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
             f'</tr>'
-            # 데이터 행
-            f'<tr>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">보유 현황</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{cny_cash:,.0f}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_book(book_display)}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{book_krw:,.0f}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_f_rate2(mkt_rate_v)}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{mkt_krw:,.0f}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{pnl_str}</td>'
-            f'</tr>'
+            f'{cny_rows_html}'
             f'</table>',
             unsafe_allow_html=True
         )

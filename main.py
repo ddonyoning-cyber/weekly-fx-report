@@ -1257,35 +1257,14 @@ with tab_usd:
 
     # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
     rows = [
-        ("현금 (보유)", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
-        ("채권 AR (미결제)", "단기 (1년 이내)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
-        ("채권 AR (미결제)", "장기 (1년 이상)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
-        ("채무 AP (미결제)", "단기 (1년 이내)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
-        ("채무 AP (미결제)", "장기 (1년 이상)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
+        ("보유현금", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
+        ("미결채권", "단기 (1년 이내)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
+        ("미결채권", "장기 (1년 이상)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
+        ("미결채무", "단기 (1년 이내)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
+        ("미결채무", "장기 (1년 이상)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
 
-    # 대응 방향 자동 판정
     pnl_pct = (usd_mkt - usd_book) / usd_book * 100 if usd_book else 0
-    def _action_for(label, sub, amt, pnl, is_ap):
-        if "현금" in label:
-            if pnl > 0 and abs(pnl_pct) >= 1.5:
-                return ("환전 검토", "#C00000")
-            if pnl < 0:
-                return ("보유 유지", "#4A90D9")
-            return ("관망", "#666")
-        if "채권" in label:
-            if amt == 0:
-                return ("-", "#bbb")
-            if "단기" in sub:
-                return ("수령 후 환전", "#2E8B57")
-            return ("선물환 헤지 검토", "#888")
-        if "채무" in label:
-            if amt == 0:
-                return ("-", "#bbb")
-            if "단기" in sub:
-                return ("결제 대기 / 선매수", "#C00000")
-            return ("선물환 헤지 검토", "#888")
-        return ("-", "#666")
 
     # 같은 항목명이 연속되면 rowspan으로 셀 병합
     labels = [r[0] for r in rows]
@@ -1313,7 +1292,6 @@ with tab_usd:
                 f'<td rowspan="{rs}" style="padding:9px 12px;border:1px solid #eee;'
                 f'font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">{label}</td>'
             )
-        action_text, action_color = _action_for(label, sub, amt, pnl, is_ap)
         rows_html += (
             f'<tr>'
             f'{label_cell}'
@@ -1324,18 +1302,11 @@ with tab_usd:
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_rate(mkt)}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_krw_mil(mkt_krw)}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_pnl_mil(pnl)}</td>'
-            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:center;color:{action_color};font-weight:600;">{action_text}</td>'
             f'</tr>'
         )
 
     # 순 노출금액 (Net Exposure) 강조 행
     net_amt_color = "color:#C00000;" if net_exposure < 0 else ""
-    if net_exposure < 0:
-        net_action, net_action_color = ("매수 / 헤지 필요", "#C00000")
-    elif cash_pnl > 0 and abs(pnl_pct) >= 1.5:
-        net_action, net_action_color = ("환전 검토", "#C00000")
-    else:
-        net_action, net_action_color = ("균형 유지", "#666")
     rows_html += (
         f'<tr style="background:#ececec;">'
         f'<td style="padding:13px 12px;border:1px solid #ccc;font-weight:700;font-size:1.05rem;">순 노출금액</td>'
@@ -1346,7 +1317,6 @@ with tab_usd:
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;">{_f_rate(usd_mkt)}</td>'
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;">{_f_krw_mil(net_mkt_krw)}</td>'
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-size:1.05rem;">{_f_pnl_mil(cash_pnl)}</td>'
-        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:center;color:{net_action_color};font-weight:700;font-size:0.95rem;">{net_action}</td>'
         f'</tr>'
     )
 
@@ -1361,7 +1331,6 @@ with tab_usd:
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
         f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준<br>외환차손익<br>'
         f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">대응 방향</th>'
         f'</tr>'
         # 헤더 2행 (장부/당일 하위)
         f'<tr style="background:#f0f4ff;text-align:center;">'

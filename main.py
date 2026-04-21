@@ -1626,6 +1626,92 @@ with tab_cny:
             unsafe_allow_html=True
         )
 
+        # ── 의사결정 분석: [현황 - 리스크 - 실무 제안] ──
+        cny_pnl_pct_v = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
+        cny_sens_man = abs(cny_net) * 10 / 10_000  # 10원 변동 시 만원
+
+        # 1) 현황
+        if cny_cash_pnl > 0:
+            cny_pnl_summary = (
+                f"평가이익 <b style='color:#C00000;'>+{cny_cash_pnl/1_000_000:,.0f}백만 원</b> "
+                f"({cny_pnl_pct_v:+.2f}%)"
+            )
+        elif cny_cash_pnl < 0:
+            cny_pnl_summary = (
+                f"평가손실 <b style='color:#4A90D9;'>{cny_cash_pnl/1_000_000:,.0f}백만 원</b> "
+                f"({cny_pnl_pct_v:+.2f}%)"
+            )
+        else:
+            cny_pnl_summary = "평가손익 보합"
+        cny_current = (
+            f"보유 현금 <b>{cny_cash:,.0f} CNY</b> (장부 {cny_book:,.2f} → 당일 {cny_mkt:,.2f}원), {cny_pnl_summary}. "
+            f"미결 채권 <b>{cny_ar_val:,.0f} CNY</b> · 미결 채무 <b>{cny_ap_val:,.0f} CNY</b>, "
+            f"순 노출 <b>{cny_net:+,.0f} CNY</b> ({_fc_krw_mil(cny_net_mkt_krw)}백만 원)."
+        )
+
+        # 2) 리스크
+        cny_risks = []
+        if cny_ap_val > cny_cash + cny_ar_val and cny_ap_val > 0:
+            shortage = cny_ap_val - cny_cash - cny_ar_val
+            cny_risks.append(
+                f"미결 채무 <b style='color:#C00000;'>{cny_ap_val:,.0f} CNY</b>가 "
+                f"보유+채권을 초과 → 부족분 <b>{shortage:,.0f} CNY</b> 추가 매수 필요."
+            )
+        if cny_net > 0:
+            cny_risks.append(
+                f"순 노출 (+) → 환율 <b>10원 하락</b> 시 약 "
+                f"<b style='color:#4A90D9;'>{cny_sens_man:,.0f}만 원</b> 평가손실 가능."
+            )
+        elif cny_net < 0:
+            cny_risks.append(
+                f"순 노출 (−) → 환율 <b>10원 상승</b> 시 약 "
+                f"<b style='color:#4A90D9;'>{cny_sens_man:,.0f}만 원</b> 결제 부담 증가."
+            )
+        if cny_cash_pnl > 0 and abs(cny_pnl_pct_v) < 1.0:
+            cny_risks.append(
+                f"평가이익이 미미({cny_pnl_pct_v:+.2f}%) → 환율 반락 시 차익 소멸 가능."
+            )
+        if not cny_risks:
+            cny_risks.append("뚜렷한 단기 리스크 없음. 위안화 추세만 주기적 점검.")
+
+        # 3) 실무 제안
+        cny_actions = []
+        if cny_cash_pnl > 0 and abs(cny_pnl_pct_v) >= 1.5:
+            sell_cny = cny_cash * 0.3
+            cny_actions.append(
+                f"<b>① 보유 CNY 30% (~{sell_cny:,.0f} CNY) 환전 검토</b> — "
+                f"평가이익 {cny_pnl_pct_v:+.2f}% 구간에서 일부 차익 실현."
+            )
+            cny_actions.append(
+                f"<b>② 환전 대상 비교</b> — KRW 환전 (즉시 차익 확정) vs USD 환전 "
+                f"(미래 결제 헷지). 단가 기준 유리한 쪽 선택."
+            )
+        elif cny_cash_pnl < 0:
+            cny_actions.append(
+                f"<b>① 환전 보류 · 보유 유지</b> — "
+                f"평가손실 {cny_pnl_pct_v:+.2f}% 구간, 손실 확정 회피."
+            )
+        else:
+            cny_actions.append("<b>① 관망</b> — 평가손익 미미, 추세 확인 후 재판단.")
+
+        if cny_ap_val > 0:
+            cny_actions.append(
+                f"<b>③ 미결 채무 {cny_ap_val:,.0f} CNY</b>는 "
+                f"분할 매수(주 2~3회)로 평균단가 안정화."
+            )
+
+        cny_risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in cny_risks)
+        cny_actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in cny_actions)
+        st.markdown(
+            f'<div style="margin-top:16px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;font-size:0.92rem;line-height:1.7;">'
+            f'<div style="font-weight:700;font-size:1.0rem;margin-bottom:10px;color:#2E75B6;">📋 의사결정 분석</div>'
+            f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{cny_current}</div>'
+            f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{cny_risks_html}</div>'
+            f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{cny_actions_html}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
         # ── 보유현금 환전 시뮬 표 ──
         st.markdown(
             f"<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 보유현금 환전 시뮬레이션</div>"
@@ -1685,11 +1771,12 @@ with tab_cny:
             unsafe_allow_html=True
         )
 
-        # 토글: 최저/최고 시나리오 상세
+        # 토글: 최저 / 평균 / 최고 시나리오 비교
         with st.expander("▶ 환율 변동 시나리오 상세보기"):
             st.markdown(
                 _sim_table(
                     _row_html("최저 (밴드 하단)", sc_low_rate) +
+                    _row_html("평균 (중간값)", sc_mid_rate) +
                     _row_html("최고 (밴드 상단)", sc_hi_rate)
                 ),
                 unsafe_allow_html=True

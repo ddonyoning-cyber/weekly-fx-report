@@ -1255,7 +1255,7 @@ with tab_usd:
     ap_l_krw = usd_ap_long * usd_mkt
     net_mkt_krw = net_exposure * usd_mkt
 
-    # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
+    # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
     rows = [
         ("보유현금", "", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
         ("미결채권", "단기", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
@@ -1320,6 +1320,16 @@ with tab_usd:
         f'</tr>'
     )
 
+    # USD 환율 정보 박스 (표 위)
+    usd_fcst_mid = (usd_lo + usd_hi) / 2
+    st.markdown(
+        f'<div style="margin-bottom:10px;padding:10px 14px;background:#f0f4ff;border-radius:6px;font-size:0.85rem;color:#333;">'
+        f'📊 <b>당일 매매기준율</b>: {usd_mkt:,.2f}원 &nbsp;|&nbsp; '
+        f'<b>금주 전망 중간</b>: {usd_fcst_mid:,.1f}원 (밴드 {usd_lo:,}~{usd_hi:,})'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
     st.markdown(
         f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
         # 헤더 1행
@@ -1329,7 +1339,7 @@ with tab_usd:
         f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액(USD)</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준 외환차손익<br>'
         f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
         f'</tr>'
         # 헤더 2행 (장부/당일 하위)
@@ -1555,7 +1565,7 @@ with tab_cny:
                 return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
             return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
 
-        # 데이터 행: (항목, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
+        # 데이터 행: (항목, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
         cny_rows = [
             ("보유현금", cny_cash, cny_book, cny_cash_book_krw, cny_mkt, cny_cash_mkt_krw, cny_cash_pnl, False),
             ("미결채권", cny_ar_val, 0, 0, cny_mkt, cny_ar_mkt_krw, 0, False),
@@ -1599,7 +1609,7 @@ with tab_cny:
             f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액(CNY)</th>'
             f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
             f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준 외환차손익<br>'
             f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
             f'</tr>'
             # 헤더 2행 (장부/당일 하위)

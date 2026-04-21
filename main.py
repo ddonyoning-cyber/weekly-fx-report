@@ -1264,12 +1264,35 @@ with tab_usd:
         ("채무 (AP)", "장기 (미결분)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
 
+    # 같은 항목명이 연속되면 rowspan으로 셀 병합
+    labels = [r[0] for r in rows]
+    rowspan_map = {}  # idx -> rowspan 값 (병합 시작 행)
+    skip_label = set()  # 라벨 셀 출력 생략할 행
+    i = 0
+    while i < len(labels):
+        j = i
+        while j + 1 < len(labels) and labels[j + 1] == labels[i]:
+            j += 1
+        if j > i:
+            rowspan_map[i] = j - i + 1
+            for k in range(i + 1, j + 1):
+                skip_label.add(k)
+        i = j + 1
+
     rows_html = ""
-    for label, sub, amt, book, book_krw, mkt, mkt_krw, pnl, is_ap in rows:
+    for idx, (label, sub, amt, book, book_krw, mkt, mkt_krw, pnl, is_ap) in enumerate(rows):
         amt_color = "color:#C00000;" if (is_ap and amt < 0) else ""
+        if idx in skip_label:
+            label_cell = ""
+        else:
+            rs = rowspan_map.get(idx, 1)
+            label_cell = (
+                f'<td rowspan="{rs}" style="padding:9px 12px;border:1px solid #eee;'
+                f'font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">{label}</td>'
+            )
         rows_html += (
             f'<tr>'
-            f'<td style="padding:9px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
+            f'{label_cell}'
             f'<td style="padding:9px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;{amt_color}">{_f_amt_usd(amt)}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_rate(book)}</td>'

@@ -1257,12 +1257,35 @@ with tab_usd:
 
     # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
     rows = [
-        ("현금", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
-        ("채권 (AR)", "단기 (이번 주/달)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
-        ("채권 (AR)", "장기 (미결분)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
-        ("채무 (AP)", "단기 (지급 예정)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
-        ("채무 (AP)", "장기 (미결분)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
+        ("현금 (보유)", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
+        ("채권 AR (미결제)", "단기 (1년 이내)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
+        ("채권 AR (미결제)", "장기 (1년 이상)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
+        ("채무 AP (미결제)", "단기 (1년 이내)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
+        ("채무 AP (미결제)", "장기 (1년 이상)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
+
+    # 대응 방향 자동 판정
+    pnl_pct = (usd_mkt - usd_book) / usd_book * 100 if usd_book else 0
+    def _action_for(label, sub, amt, pnl, is_ap):
+        if "현금" in label:
+            if pnl > 0 and abs(pnl_pct) >= 1.5:
+                return ("환전 검토", "#C00000")
+            if pnl < 0:
+                return ("보유 유지", "#4A90D9")
+            return ("관망", "#666")
+        if "채권" in label:
+            if amt == 0:
+                return ("-", "#bbb")
+            if "단기" in sub:
+                return ("수령 후 환전", "#2E8B57")
+            return ("선물환 헤지 검토", "#888")
+        if "채무" in label:
+            if amt == 0:
+                return ("-", "#bbb")
+            if "단기" in sub:
+                return ("결제 대기 / 선매수", "#C00000")
+            return ("선물환 헤지 검토", "#888")
+        return ("-", "#666")
 
     # 같은 항목명이 연속되면 rowspan으로 셀 병합
     labels = [r[0] for r in rows]
@@ -1290,6 +1313,7 @@ with tab_usd:
                 f'<td rowspan="{rs}" style="padding:9px 12px;border:1px solid #eee;'
                 f'font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">{label}</td>'
             )
+        action_text, action_color = _action_for(label, sub, amt, pnl, is_ap)
         rows_html += (
             f'<tr>'
             f'{label_cell}'
@@ -1300,11 +1324,18 @@ with tab_usd:
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_rate(mkt)}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_krw_mil(mkt_krw)}</td>'
             f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_pnl_mil(pnl)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:center;color:{action_color};font-weight:600;">{action_text}</td>'
             f'</tr>'
         )
 
     # 순 노출금액 (Net Exposure) 강조 행
     net_amt_color = "color:#C00000;" if net_exposure < 0 else ""
+    if net_exposure < 0:
+        net_action, net_action_color = ("매수 / 헤지 필요", "#C00000")
+    elif cash_pnl > 0 and abs(pnl_pct) >= 1.5:
+        net_action, net_action_color = ("환전 검토", "#C00000")
+    else:
+        net_action, net_action_color = ("균형 유지", "#666")
     rows_html += (
         f'<tr style="background:#ececec;">'
         f'<td style="padding:13px 12px;border:1px solid #ccc;font-weight:700;font-size:1.05rem;">순 노출금액</td>'
@@ -1315,6 +1346,7 @@ with tab_usd:
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;">{_f_rate(usd_mkt)}</td>'
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;">{_f_krw_mil(net_mkt_krw)}</td>'
         f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-size:1.05rem;">{_f_pnl_mil(cash_pnl)}</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:center;color:{net_action_color};font-weight:700;font-size:0.95rem;">{net_action}</td>'
         f'</tr>'
     )
 
@@ -1327,8 +1359,9 @@ with tab_usd:
         f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외화 금액</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준<br>외환차손익<br>'
         f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">대응 방향</th>'
         f'</tr>'
         # 헤더 2행 (장부/당일 하위)
         f'<tr style="background:#f0f4ff;text-align:center;">'
@@ -1344,37 +1377,89 @@ with tab_usd:
         unsafe_allow_html=True
     )
 
-    # 민감도 분석 (환율 10원 변동 → 순 노출금액 기준 KRW 변동)
-    sens_krw = abs(net_exposure) * 10  # 10원 변동 시 KRW 환산 변동
-    sens_man = sens_krw / 10_000  # 만 원 단위
-    if net_exposure >= 0:
-        sens_html = (
-            f"현재 순 노출금액 (<b>{net_exposure:,.0f} USD</b>) 기준, "
-            f"환율 <b>10원 상승</b> 시 약 <b style='color:#C00000;'>{sens_man:,.0f}만 원</b>의 추가 환차익이 예상됩니다."
+    # ── 의사결정 분석: [현황 - 리스크 - 실무 제안] ──
+    sens_man = abs(net_exposure) * 10 / 10_000  # 환율 10원 변동 시 만원 환산
+
+    # 1) 현황
+    if cash_pnl > 0:
+        pnl_summary = f"평가이익 <b style='color:#C00000;'>+{cash_pnl/1_000_000:,.0f}백만 원</b> ({pnl_pct:+.2f}%)"
+    elif cash_pnl < 0:
+        pnl_summary = f"평가손실 <b style='color:#4A90D9;'>{cash_pnl/1_000_000:,.0f}백만 원</b> ({pnl_pct:+.2f}%)"
+    else:
+        pnl_summary = "평가손익 보합"
+    current = (
+        f"보유 현금 <b>${usd_cash:,.0f}</b> (장부 {usd_book:,.2f} → 당일 {usd_mkt:,.2f}원), {pnl_summary}. "
+        f"단기 채권 <b>${usd_ar_short:,.0f}</b> · 단기 채무 <b>${usd_ap_short:,.0f}</b>, "
+        f"순 노출 <b>{net_exposure:+,.0f} USD</b> ({_f_krw_mil(net_mkt_krw)}백만 원)."
+    )
+
+    # 2) 리스크
+    risk_items = []
+    if usd_liquidity < 0:
+        risk_items.append(
+            f"단기 유동성 <b style='color:#C00000;'>${abs(usd_liquidity):,.0f} 부족</b> — "
+            f"이번 주 결제 자금 미확보 시 환율 급등 리스크에 그대로 노출."
+        )
+    if net_exposure > 0:
+        risk_items.append(
+            f"순 노출 (+) 상태 → 환율 <b>10원 하락</b> 시 약 "
+            f"<b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b> 평가손실 가능."
+        )
+    elif net_exposure < 0:
+        risk_items.append(
+            f"순 노출 (−) 상태 → 환율 <b>10원 상승</b> 시 약 "
+            f"<b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b> 결제 부담 증가."
+        )
+    if usd_ap_long > usd_ar_long and usd_ap_long > 0:
+        risk_items.append(
+            f"장기 채무 <b>${usd_ap_long:,.0f}</b>가 장기 채권을 초과 → "
+            f"중장기 환율 상승 시 결제 비용 누적."
+        )
+    if not risk_items:
+        risk_items.append("뚜렷한 단기 리스크 없음. 환율 추세만 주기적 점검.")
+
+    # 3) 실무 제안
+    actions = []
+    if usd_liquidity < 0:
+        actions.append(
+            f"<b>① 즉시 ${abs(usd_liquidity):,.0f} 매수</b> 또는 단기 외화 차입으로 결제 자금 확보."
+        )
+    elif cash_pnl > 0 and abs(pnl_pct) >= 1.5:
+        sell_amt = usd_cash * 0.3
+        actions.append(
+            f"<b>① 보유 USD 30% (~${sell_amt:,.0f}) 환전 검토</b> — "
+            f"평가이익 {pnl_pct:+.2f}% 구간에서 일부 차익 실현."
+        )
+    elif cash_pnl < 0:
+        actions.append(
+            f"<b>① 환전 보류 · 보유 유지</b> — "
+            f"평가손실 {pnl_pct:+.2f}% 구간, 손실 확정 회피."
         )
     else:
-        sens_html = (
-            f"현재 순 노출금액 (<b>{net_exposure:,.0f} USD</b>, 음수) 기준, "
-            f"환율 <b>10원 상승</b> 시 약 <b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b>의 추가 환차손이 예상됩니다."
+        actions.append("<b>① 관망</b> — 평가손익 미미, 추세 확인 후 재판단.")
+
+    if usd_ap_short > 0:
+        actions.append(
+            f"<b>② 단기 결제 ${usd_ap_short:,.0f}</b> 대비 분할 매수(주 2~3회)로 "
+            f"평균단가 안정화."
         )
+    if usd_ar_long > 0 or usd_ap_long > 0:
+        actions.append(
+            f"<b>③ 장기 미결분</b> (AR ${usd_ar_long:,.0f} / AP ${usd_ap_long:,.0f})에 대해 "
+            f"선물환·통화스왑 헤지 비율 점검."
+        )
+
+    risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in risk_items)
+    actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in actions)
     st.markdown(
-        f'<div style="margin-top:14px;padding:12px 16px;background:#fff8e1;border-left:4px solid #f4b400;border-radius:6px;font-size:0.9rem;line-height:1.55;">'
-        f'📐 <b>민감도 분석</b> &nbsp; {sens_html}'
+        f'<div style="margin-top:16px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;font-size:0.92rem;line-height:1.7;">'
+        f'<div style="font-weight:700;font-size:1.0rem;margin-bottom:10px;color:#2E75B6;">📋 의사결정 분석</div>'
+        f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{current}</div>'
+        f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html}</div>'
+        f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html}</div>'
         f'</div>',
         unsafe_allow_html=True
     )
-
-    # 단기 유동성 경고 / 양호 박스
-    if net_warn:
-        st.markdown(
-            f'<div style="margin-top:10px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
-            f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 <b>${abs(usd_liquidity):,.0f}</b> 부족'
-            f'</div>', unsafe_allow_html=True)
-    else:
-        st.markdown(
-            f'<div style="margin-top:10px;padding:12px 16px;background:#f0fdf4;border-left:4px solid #2E8B57;border-radius:6px;font-size:0.9rem;">'
-            f'✅ <b>유동성 양호</b>: 단기 여유 <b>${usd_liquidity:,.0f}</b>'
-            f'</div>', unsafe_allow_html=True)
 
 with tab_cny:
     cny_pnl_total = (cny_mkt - cny_book) * cny_cash if cny_book else 0

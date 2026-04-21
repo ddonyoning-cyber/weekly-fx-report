@@ -383,7 +383,7 @@ JSON만 출력하고 다른 설명은 하지 마세요."""
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1135,7 +1135,7 @@ def _ai_fx_strategy(context: str) -> str:
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
-            model="claude-3-5-sonnet-latest",
+            model="claude-sonnet-4-5",
             max_tokens=2000,
             system="""너는 글로벌 기업의 외환 전략 최고 책임자(CFO)야.
 아래 데이터를 보고 '금주 외환 실행 전략 가이드'를 작성해.
@@ -1161,6 +1161,83 @@ def _ai_fx_strategy(context: str) -> str:
         return msg.content[0].text.strip()
     except Exception as e:
         return f"⚠️ AI 분석 실패: {e}"
+
+
+# ── 통화별 의사결정 분석 (Claude 직접 분석) ──
+@st.cache_data(ttl=86400, show_spinner=False)
+def _ai_decision(currency: str, payload: str) -> dict:
+    """포지션 데이터를 Claude가 직접 보고 [현황-리스크-실무 제안]을 JSON으로 반환."""
+    result = {"current": "", "risks": [], "actions": [], "error": ""}
+    if not ANTHROPIC_API_KEY:
+        result["error"] = "API 키 미설정"
+        return result
+    try:
+        from anthropic import Anthropic
+        import json as _json
+        client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
+        msg = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1500,
+            system=f"""너는 글로벌 의류 기업 F&F의 외환 트레저리 전략가야.
+{currency} 포지션 데이터를 직접 분석해서 [현황 - 리스크 - 실무 제안] 의사결정 분석을 작성해.
+
+[출력 포맷] 정확히 다음 JSON만 출력 (마크다운 코드블록 없이):
+{{
+  "current": "한 단락 현황 요약 (보유/채권/채무/평가손익/순노출 종합. <b>HTML 강조</b> 가능)",
+  "risks": ["리스크 1 (한 줄)", "리스크 2", "..."],
+  "actions": ["① 제안 1 (한 줄)", "② 제안 2", "③ 제안 3 (선택)"]
+}}
+
+[분석 지침]
+- 결론부터 말하고 근거 숫자(금액·환율·%)를 반드시 인용
+- 평가이익/손실의 강도, 순노출 방향, 환율 민감도(10원 변동 시 영향), 채무 부담을 종합 판단
+- 리스크는 2~3개, 실무 제안은 2~3개로 압축
+- 각 항목 한국어 한 줄 (최대 60자)
+- 환전 권고 시 구체적 비중(%)과 금액을 제시
+- 평가손실 구간이면 보유 유지·환전 보류 권고
+- 단기 채무가 보유+채권을 초과하면 즉시 매수 경고
+- 한국어. 다른 텍스트 출력 금지.""",
+            messages=[{"role": "user", "content": payload}],
+        )
+        text = msg.content[0].text.strip()
+        # ```json ... ``` 마크다운 제거
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        parsed = _json.loads(text)
+        result["current"] = parsed.get("current", "")
+        result["risks"] = parsed.get("risks", []) or []
+        result["actions"] = parsed.get("actions", []) or []
+        return result
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
+def _render_ai_decision(decision: dict):
+    """AI 의사결정 결과를 통일된 박스로 렌더."""
+    if decision.get("error"):
+        st.markdown(
+            f'<div style="margin-top:16px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
+            f'⚠️ <b>AI 의사결정 분석 실패</b>: {decision["error"]}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in decision["risks"])
+    actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in decision["actions"])
+    st.markdown(
+        f'<div style="margin-top:16px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;font-size:0.92rem;line-height:1.7;">'
+        f'<div style="font-weight:700;font-size:1.0rem;margin-bottom:10px;color:#2E75B6;">📋 의사결정 분석 <span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI)</span></div>'
+        f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{decision["current"]}</div>'
+        f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html}</div>'
+        f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
 with st.spinner("AI가 외환 포지션을 분석하는 중..."):
     ai_strategy = _ai_fx_strategy(summary_text)
@@ -1357,89 +1434,24 @@ with tab_usd:
         unsafe_allow_html=True
     )
 
-    # ── 의사결정 분석: [현황 - 리스크 - 실무 제안] ──
-    sens_man = abs(net_exposure) * 10 / 10_000  # 환율 10원 변동 시 만원 환산
-
-    # 1) 현황
-    if cash_pnl > 0:
-        pnl_summary = f"평가이익 <b style='color:#C00000;'>+{cash_pnl/1_000_000:,.0f}백만 원</b> ({pnl_pct:+.2f}%)"
-    elif cash_pnl < 0:
-        pnl_summary = f"평가손실 <b style='color:#4A90D9;'>{cash_pnl/1_000_000:,.0f}백만 원</b> ({pnl_pct:+.2f}%)"
-    else:
-        pnl_summary = "평가손익 보합"
-    current = (
-        f"보유 현금 <b>${usd_cash:,.0f}</b> (장부 {usd_book:,.2f} → 당일 {usd_mkt:,.2f}원), {pnl_summary}. "
-        f"단기 채권 <b>${usd_ar_short:,.0f}</b> · 단기 채무 <b>${usd_ap_short:,.0f}</b>, "
-        f"순 노출 <b>{net_exposure:+,.0f} USD</b> ({_f_krw_mil(net_mkt_krw)}백만 원)."
+    # ── 의사결정 분석 (Claude 직접 분석) ──
+    sens_per_10 = abs(net_exposure) * 10  # 환율 10원 변동 시 KRW
+    usd_payload = (
+        f"[USD 포지션 현황]\n"
+        f"- 보유 현금: {usd_cash:,.0f} USD (장부 평균 {usd_book:,.2f}원, 당일 매매기준율 {usd_mkt:,.2f}원)\n"
+        f"- 평가손익: {cash_pnl:+,.0f}원 ({pnl_pct:+.2f}%) → 백만원 단위 {cash_pnl/1_000_000:+,.0f}\n"
+        f"- 미결 채권 (AR): 단기 {usd_ar_short:,.0f} / 장기 {usd_ar_long:,.0f} USD\n"
+        f"- 미결 채무 (AP): 단기 {usd_ap_short:,.0f} / 장기 {usd_ap_long:,.0f} USD\n"
+        f"- 단기 유동성 (현금+단기AR-단기AP): {usd_liquidity:+,.0f} USD\n"
+        f"- 순 노출금액 (현금+AR-AP): {net_exposure:+,.0f} USD = {net_mkt_krw/1_000_000:+,.0f}백만 원\n"
+        f"- 환율 민감도: 환율 10원 변동 시 약 {sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
+        f"[금주 USD/KRW 전망]\n"
+        f"- 밴드: {usd_lo:,} ~ {usd_hi:,}원 (중간 {(usd_lo+usd_hi)/2:,.1f})\n"
+        f"- 방향: {usd_dir}"
     )
-
-    # 2) 리스크
-    risk_items = []
-    if usd_liquidity < 0:
-        risk_items.append(
-            f"단기 유동성 <b style='color:#C00000;'>${abs(usd_liquidity):,.0f} 부족</b> — "
-            f"이번 주 결제 자금 미확보 시 환율 급등 리스크에 그대로 노출."
-        )
-    if net_exposure > 0:
-        risk_items.append(
-            f"순 노출 (+) 상태 → 환율 <b>10원 하락</b> 시 약 "
-            f"<b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b> 평가손실 가능."
-        )
-    elif net_exposure < 0:
-        risk_items.append(
-            f"순 노출 (−) 상태 → 환율 <b>10원 상승</b> 시 약 "
-            f"<b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b> 결제 부담 증가."
-        )
-    if usd_ap_long > usd_ar_long and usd_ap_long > 0:
-        risk_items.append(
-            f"장기 채무 <b>${usd_ap_long:,.0f}</b>가 장기 채권을 초과 → "
-            f"중장기 환율 상승 시 결제 비용 누적."
-        )
-    if not risk_items:
-        risk_items.append("뚜렷한 단기 리스크 없음. 환율 추세만 주기적 점검.")
-
-    # 3) 실무 제안
-    actions = []
-    if usd_liquidity < 0:
-        actions.append(
-            f"<b>① 즉시 ${abs(usd_liquidity):,.0f} 매수</b> 또는 단기 외화 차입으로 결제 자금 확보."
-        )
-    elif cash_pnl > 0 and abs(pnl_pct) >= 1.5:
-        sell_amt = usd_cash * 0.3
-        actions.append(
-            f"<b>① 보유 USD 30% (~${sell_amt:,.0f}) 환전 검토</b> — "
-            f"평가이익 {pnl_pct:+.2f}% 구간에서 일부 차익 실현."
-        )
-    elif cash_pnl < 0:
-        actions.append(
-            f"<b>① 환전 보류 · 보유 유지</b> — "
-            f"평가손실 {pnl_pct:+.2f}% 구간, 손실 확정 회피."
-        )
-    else:
-        actions.append("<b>① 관망</b> — 평가손익 미미, 추세 확인 후 재판단.")
-
-    if usd_ap_short > 0:
-        actions.append(
-            f"<b>② 단기 결제 ${usd_ap_short:,.0f}</b> 대비 분할 매수(주 2~3회)로 "
-            f"평균단가 안정화."
-        )
-    if usd_ar_long > 0 or usd_ap_long > 0:
-        actions.append(
-            f"<b>③ 장기 미결분</b> (AR ${usd_ar_long:,.0f} / AP ${usd_ap_long:,.0f})에 대해 "
-            f"선물환·통화스왑 헤지 비율 점검."
-        )
-
-    risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in risk_items)
-    actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in actions)
-    st.markdown(
-        f'<div style="margin-top:16px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;font-size:0.92rem;line-height:1.7;">'
-        f'<div style="font-weight:700;font-size:1.0rem;margin-bottom:10px;color:#2E75B6;">📋 의사결정 분석</div>'
-        f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{current}</div>'
-        f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html}</div>'
-        f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html}</div>'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+    with st.spinner("Claude가 USD 의사결정 분석 중..."):
+        usd_decision = _ai_decision("USD", usd_payload)
+    _render_ai_decision(usd_decision)
 
 with tab_cny:
     cny_pnl_total = (cny_mkt - cny_book) * cny_cash if cny_book else 0
@@ -1626,91 +1638,25 @@ with tab_cny:
             unsafe_allow_html=True
         )
 
-        # ── 의사결정 분석: [현황 - 리스크 - 실무 제안] ──
+        # ── 의사결정 분석 (Claude 직접 분석) ──
         cny_pnl_pct_v = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
-        cny_sens_man = abs(cny_net) * 10 / 10_000  # 10원 변동 시 만원
-
-        # 1) 현황
-        if cny_cash_pnl > 0:
-            cny_pnl_summary = (
-                f"평가이익 <b style='color:#C00000;'>+{cny_cash_pnl/1_000_000:,.0f}백만 원</b> "
-                f"({cny_pnl_pct_v:+.2f}%)"
-            )
-        elif cny_cash_pnl < 0:
-            cny_pnl_summary = (
-                f"평가손실 <b style='color:#4A90D9;'>{cny_cash_pnl/1_000_000:,.0f}백만 원</b> "
-                f"({cny_pnl_pct_v:+.2f}%)"
-            )
-        else:
-            cny_pnl_summary = "평가손익 보합"
-        cny_current = (
-            f"보유 현금 <b>{cny_cash:,.0f} CNY</b> (장부 {cny_book:,.2f} → 당일 {cny_mkt:,.2f}원), {cny_pnl_summary}. "
-            f"미결 채권 <b>{cny_ar_val:,.0f} CNY</b> · 미결 채무 <b>{cny_ap_val:,.0f} CNY</b>, "
-            f"순 노출 <b>{cny_net:+,.0f} CNY</b> ({_fc_krw_mil(cny_net_mkt_krw)}백만 원)."
+        cny_sens_per_10 = abs(cny_net) * 10  # 10원 변동 시 KRW
+        cny_payload = (
+            f"[CNY 포지션 현황]\n"
+            f"- 보유 현금: {cny_cash:,.0f} CNY (장부 평균 {cny_book:,.2f}원, 당일 매매기준율 {cny_mkt:,.2f}원)\n"
+            f"- 평가손익: {cny_cash_pnl:+,.0f}원 ({cny_pnl_pct_v:+.2f}%) → 백만원 단위 {cny_cash_pnl/1_000_000:+,.0f}\n"
+            f"- 미결 채권 (AR): {cny_ar_val:,.0f} CNY\n"
+            f"- 미결 채무 (AP): {cny_ap_val:,.0f} CNY\n"
+            f"- 순 노출금액 (현금+AR-AP): {cny_net:+,.0f} CNY = {cny_net_mkt_krw/1_000_000:+,.0f}백만 원\n"
+            f"- 환율 민감도: 환율 10원 변동 시 약 {cny_sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
+            f"[금주 CNY/KRW 전망]\n"
+            f"- CNY/KRW 밴드: {cny_lo:,} ~ {cny_hi:,}원 (중간 {(cny_lo+cny_hi)/2:,.1f})\n"
+            f"- USD/CNY 재정환율 밴드: {cross_lo} ~ {cross_hi} (당일 {cross_rate:.4f})\n"
+            f"- 환전 대상은 KRW(즉시 차익 확정) 또는 USD(미래 결제 대비)로 분기 판단 필요"
         )
-
-        # 2) 리스크
-        cny_risks = []
-        if cny_ap_val > cny_cash + cny_ar_val and cny_ap_val > 0:
-            shortage = cny_ap_val - cny_cash - cny_ar_val
-            cny_risks.append(
-                f"미결 채무 <b style='color:#C00000;'>{cny_ap_val:,.0f} CNY</b>가 "
-                f"보유+채권을 초과 → 부족분 <b>{shortage:,.0f} CNY</b> 추가 매수 필요."
-            )
-        if cny_net > 0:
-            cny_risks.append(
-                f"순 노출 (+) → 환율 <b>10원 하락</b> 시 약 "
-                f"<b style='color:#4A90D9;'>{cny_sens_man:,.0f}만 원</b> 평가손실 가능."
-            )
-        elif cny_net < 0:
-            cny_risks.append(
-                f"순 노출 (−) → 환율 <b>10원 상승</b> 시 약 "
-                f"<b style='color:#4A90D9;'>{cny_sens_man:,.0f}만 원</b> 결제 부담 증가."
-            )
-        if cny_cash_pnl > 0 and abs(cny_pnl_pct_v) < 1.0:
-            cny_risks.append(
-                f"평가이익이 미미({cny_pnl_pct_v:+.2f}%) → 환율 반락 시 차익 소멸 가능."
-            )
-        if not cny_risks:
-            cny_risks.append("뚜렷한 단기 리스크 없음. 위안화 추세만 주기적 점검.")
-
-        # 3) 실무 제안
-        cny_actions = []
-        if cny_cash_pnl > 0 and abs(cny_pnl_pct_v) >= 1.5:
-            sell_cny = cny_cash * 0.3
-            cny_actions.append(
-                f"<b>① 보유 CNY 30% (~{sell_cny:,.0f} CNY) 환전 검토</b> — "
-                f"평가이익 {cny_pnl_pct_v:+.2f}% 구간에서 일부 차익 실현."
-            )
-            cny_actions.append(
-                f"<b>② 환전 대상 비교</b> — KRW 환전 (즉시 차익 확정) vs USD 환전 "
-                f"(미래 결제 헷지). 단가 기준 유리한 쪽 선택."
-            )
-        elif cny_cash_pnl < 0:
-            cny_actions.append(
-                f"<b>① 환전 보류 · 보유 유지</b> — "
-                f"평가손실 {cny_pnl_pct_v:+.2f}% 구간, 손실 확정 회피."
-            )
-        else:
-            cny_actions.append("<b>① 관망</b> — 평가손익 미미, 추세 확인 후 재판단.")
-
-        if cny_ap_val > 0:
-            cny_actions.append(
-                f"<b>③ 미결 채무 {cny_ap_val:,.0f} CNY</b>는 "
-                f"분할 매수(주 2~3회)로 평균단가 안정화."
-            )
-
-        cny_risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in cny_risks)
-        cny_actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in cny_actions)
-        st.markdown(
-            f'<div style="margin-top:16px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;font-size:0.92rem;line-height:1.7;">'
-            f'<div style="font-weight:700;font-size:1.0rem;margin-bottom:10px;color:#2E75B6;">📋 의사결정 분석</div>'
-            f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{cny_current}</div>'
-            f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{cny_risks_html}</div>'
-            f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{cny_actions_html}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+        with st.spinner("Claude가 CNY 의사결정 분석 중..."):
+            cny_decision = _ai_decision("CNY", cny_payload)
+        _render_ai_decision(cny_decision)
 
         # ── 보유현금 환전 시뮬 표 ──
         st.markdown(

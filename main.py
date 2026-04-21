@@ -1222,66 +1222,134 @@ def _position_table(currency, cash_amt, book_rate, mkt_rate, ar_short, ar_long, 
     )
 
 with tab_usd:
-    usd_pnl_total = (usd_mkt - usd_book) * usd_cash if usd_book else 0
+    cash_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
     usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
     net_warn = usd_liquidity < 0
+    net_exposure = usd_cash + usd_ar_short + usd_ar_long - usd_ap_short - usd_ap_long
 
-    # 행 데이터: (항목, 구분, 금액, 장부단가, 현재환율, 외환차손익, 강조여부)
-    def _fmt_amt(v): return f"{v:,.0f}" if v else "-"
-    def _fmt_rate(v): return f"{v:,.2f}" if v else "-"
-    def _fmt_pnl(v):
-        if v == 0: return "-"
-        color = "#C00000" if v > 0 else "#4A90D9"
-        return f'<span style="color:{color};font-weight:700;">{v:+,.0f}</span>'
+    # 포맷터 ───────────────────────────────────────────
+    def _f_amt_usd(v):
+        if not v: return "-"
+        return f"{v:,.0f}"
+    def _f_rate(v):
+        if not v: return "-"
+        if abs(v - round(v)) < 1e-6:
+            return f"{int(round(v)):,}"
+        return f"{v:,.2f}"
+    def _f_krw_mil(v):
+        if not v: return "-"
+        return f"{v / 1_000_000:,.0f}"
+    def _f_pnl_mil(v):
+        if not v: return "-"
+        val = abs(v) / 1_000_000
+        if v > 0:
+            return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
+        return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
 
+    # 원화 환산 ──────────────────────────────────────
+    cash_book_krw = usd_cash * usd_book if usd_book else 0
+    cash_mkt_krw = usd_cash * usd_mkt
+    ar_s_krw = usd_ar_short * usd_mkt
+    ar_l_krw = usd_ar_long * usd_mkt
+    ap_s_krw = usd_ap_short * usd_mkt
+    ap_l_krw = usd_ap_long * usd_mkt
+    net_mkt_krw = net_exposure * usd_mkt
+
+    # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 외환차손익, is_ap)
     rows = [
-        ("현금", "당사 보유 잔액", usd_cash, usd_book, usd_mkt, usd_pnl_total, False, False),
-        ("채권 (AR)", "단기 (이번 주/달)", usd_ar_short, 0, 0, 0, False, False),
-        ("채권 (AR)", "장기 (미결분)", usd_ar_long, 0, 0, 0, False, False),
-        ("채무 (AP)", "단기 (지급 예정)", usd_ap_short, 0, 0, 0, True, False),
-        ("채무 (AP)", "장기 (미결분)", usd_ap_long, 0, 0, 0, False, False),
-        ("합계 (Net)", "순 유동성", usd_liquidity, 0, 0, usd_pnl_total, False, net_warn),
+        ("현금", "보유 잔액", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
+        ("채권 (AR)", "단기 (이번 주/달)", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
+        ("채권 (AR)", "장기 (미결분)", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
+        ("채무 (AP)", "단기 (지급 예정)", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
+        ("채무 (AP)", "장기 (미결분)", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
 
     rows_html = ""
-    for label, sub, amt, book, mkt, pnl, is_ap, is_warn in rows:
-        bg = "background:#fdf2f2;" if is_warn else ""
-        amt_color = "color:#C00000;font-weight:700;" if (is_ap and amt > 0) else ""
-        amt_str = _fmt_amt(amt)
-        if amt < 0:
-            amt_color = "color:#C00000;font-weight:700;"
+    for label, sub, amt, book, book_krw, mkt, mkt_krw, pnl, is_ap in rows:
+        amt_color = "color:#C00000;" if (is_ap and amt < 0) else ""
         rows_html += (
-            f'<tr style="{bg}">'
-            f'<td style="padding:8px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;{amt_color}">{amt_str}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_rate(book)}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_rate(mkt)}</td>'
-            f'<td style="padding:8px 12px;border:1px solid #eee;text-align:right;">{_fmt_pnl(pnl)}</td>'
+            f'<tr>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;">{label}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;{amt_color}">{_f_amt_usd(amt)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_rate(book)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_krw_mil(book_krw)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_rate(mkt)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_krw_mil(mkt_krw)}</td>'
+            f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_f_pnl_mil(pnl)}</td>'
             f'</tr>'
         )
 
+    # 순 노출금액 (Net Exposure) 강조 행
+    net_amt_color = "color:#C00000;" if net_exposure < 0 else ""
+    rows_html += (
+        f'<tr style="background:#ececec;">'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;font-weight:700;font-size:1.05rem;">순 노출금액</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;color:#444;font-size:0.9rem;">현금 + 채권 − 채무</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;{net_amt_color}">{_f_amt_usd(net_exposure)}</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;">{_f_rate(usd_mkt)}</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;">{_f_krw_mil(net_mkt_krw)}</td>'
+        f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-size:1.05rem;">{_f_pnl_mil(cash_pnl)}</td>'
+        f'</tr>'
+    )
+
     st.markdown(
         f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
+        # 헤더 1행
         f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:10px;border:1px solid #ddd;">항목 (USD)</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;">구분</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;">금액</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;">장부단가</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;">현재환율</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;">외환차손익(원)</th>'
-        f'</tr>{rows_html}</table>',
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목 (USD)</th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">구분</th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외화 금액</th>'
+        f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
+        f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">외환차손익<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'</tr>'
+        # 헤더 2행 (장부/당일 하위)
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:6px;border:1px solid #ddd;">환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화금액<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">환율</th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화금액<br>'
+        f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만 원)</span></th>'
+        f'</tr>'
+        f'{rows_html}'
+        f'</table>',
         unsafe_allow_html=True
     )
 
+    # 민감도 분석 (환율 10원 변동 → 순 노출금액 기준 KRW 변동)
+    sens_krw = abs(net_exposure) * 10  # 10원 변동 시 KRW 환산 변동
+    sens_man = sens_krw / 10_000  # 만 원 단위
+    if net_exposure >= 0:
+        sens_html = (
+            f"현재 순 노출금액 (<b>{net_exposure:,.0f} USD</b>) 기준, "
+            f"환율 <b>10원 상승</b> 시 약 <b style='color:#C00000;'>{sens_man:,.0f}만 원</b>의 추가 환차익이 예상됩니다."
+        )
+    else:
+        sens_html = (
+            f"현재 순 노출금액 (<b>{net_exposure:,.0f} USD</b>, 음수) 기준, "
+            f"환율 <b>10원 상승</b> 시 약 <b style='color:#4A90D9;'>{sens_man:,.0f}만 원</b>의 추가 환차손이 예상됩니다."
+        )
+    st.markdown(
+        f'<div style="margin-top:14px;padding:12px 16px;background:#fff8e1;border-left:4px solid #f4b400;border-radius:6px;font-size:0.9rem;line-height:1.55;">'
+        f'📐 <b>민감도 분석</b> &nbsp; {sens_html}'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    # 단기 유동성 경고 / 양호 박스
     if net_warn:
         st.markdown(
-            f'<div style="margin-top:12px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
+            f'<div style="margin-top:10px;padding:12px 16px;background:#fdf2f2;border-left:4px solid #C00000;border-radius:6px;font-size:0.9rem;">'
             f'🚨 <b>즉시 달러 매수 필요</b>: 단기 유동성 <b>${abs(usd_liquidity):,.0f}</b> 부족'
             f'</div>', unsafe_allow_html=True)
     else:
         st.markdown(
-            f'<div style="margin-top:12px;padding:12px 16px;background:#f0fdf4;border-left:4px solid #2E8B57;border-radius:6px;font-size:0.9rem;">'
+            f'<div style="margin-top:10px;padding:12px 16px;background:#f0fdf4;border-left:4px solid #2E8B57;border-radius:6px;font-size:0.9rem;">'
             f'✅ <b>유동성 양호</b>: 단기 여유 <b>${usd_liquidity:,.0f}</b>'
             f'</div>', unsafe_allow_html=True)
 

@@ -1219,37 +1219,6 @@ if "구분" in ap_df.columns:
     usd_ap_long = float(sm["금액"].sum()) if not sm.empty else 0.0
     usd_ap_short = usd_ap_val - usd_ap_long
 
-# ── Claude API 자율 분석 (한 줄 요약) ──
-@st.cache_data(ttl=86400, show_spinner=False)
-def _ai_fx_strategy(context: str) -> str:
-    if not ANTHROPIC_API_KEY:
-        return "⚠️ API 키가 설정되지 않아 AI 요약을 수행할 수 없습니다."
-    try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
-        msg = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=400,
-            system="""너는 F&F 외환 트레저리 전략가야.
-아래 포지션 데이터를 보고 '금주 외환 실행 전략 한 줄 요약'을 작성해.
-
-[출력 포맷] 정확히 다음 2줄만 출력 (다른 텍스트 금지):
-🇺🇸 <b>USD</b>: <한 줄 핵심 결론 + 근거 숫자 (60자 이내)>
-🇨🇳 <b>CNY</b>: <한 줄 핵심 결론 + 환전 비중·대상 (60자 이내)>
-
-[작성 규칙]
-- 결론 우선: 환전/매수/유지/관망 중 무엇을 해야 하는지 동사로 시작
-- 근거 숫자 1개 이상 포함 (평가손익 %, 부족 금액 등)
-- HTML <b> 태그로 핵심 키워드 강조
-- 자세한 분석은 하지 말고 한 줄로 압축 (USD/CNY 탭에 상세 분석 따로 있음)
-- 한국어. 다른 텍스트나 마크다운 헤더 출력 금지.""",
-            messages=[{"role": "user", "content": context}],
-        )
-        return msg.content[0].text.strip()
-    except Exception as e:
-        return f"⚠️ AI 요약 실패: {e}"
-
-
 # ── 통화별 의사결정 분석 (Claude 직접 분석) ──
 @st.cache_data(ttl=86400, show_spinner=False)
 def _ai_decision(currency: str, payload: str) -> dict:
@@ -1326,42 +1295,7 @@ def _render_ai_decision(decision: dict):
     )
 
 
-with st.spinner("AI가 외환 포지션을 요약하는 중..."):
-    ai_strategy = _ai_fx_strategy(summary_text)
-
 # ── UI 렌더링 ──
-
-# 최상단: AI 전략 한 줄 요약 (상세 분석은 USD/CNY 탭 의사결정 분석 박스에 있음)
-# 현재기준 외환차손익 (USD + CNY 보유 현금 평가손익 합계)
-_top_usd_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
-_top_cny_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
-_top_total_pnl = _top_usd_pnl + _top_cny_pnl
-
-def _pnl_seg(label, v):
-    if v == 0:
-        return f"{label} <b>0</b>"
-    color = "#C00000" if v > 0 else "#4A90D9"
-    arrow = "▲" if v > 0 else "▼"
-    return f"{label} <b style='color:{color};'>{arrow} {abs(v)/1_000_000:,.0f}백만 원</b>"
-
-pnl_status = "평가이익" if _top_total_pnl > 0 else ("평가손실" if _top_total_pnl < 0 else "보합")
-pnl_html = (
-    f"💰 <b>현재기준 외환차손익</b>: {_pnl_seg(pnl_status, _top_total_pnl)} "
-    f"<span style='color:#888;font-size:0.85rem;'>"
-    f"({_pnl_seg('🇺🇸', _top_usd_pnl)} / {_pnl_seg('🇨🇳', _top_cny_pnl)})"
-    f"</span>"
-)
-
-ai_lines = ai_strategy.replace("\n\n", "\n").strip().split("\n")
-ai_lines_html = "<br>".join(line.strip() for line in ai_lines if line.strip())
-st.markdown(
-    f'<div style="margin:6px 0 14px 0;padding:12px 16px;background:#f5f8ff;border-left:4px solid #2E75B6;border-radius:6px;font-size:0.9rem;line-height:1.7;">'
-    f'<span style="font-weight:700;color:#2E75B6;font-size:0.88rem;">🤖 금주 핵심 요약</span><br>'
-    f'{pnl_html}<br>'
-    f'{ai_lines_html}'
-    f'</div>',
-    unsafe_allow_html=True,
-)
 
 # USD / CNY 탭 분리
 tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수익 전략"])

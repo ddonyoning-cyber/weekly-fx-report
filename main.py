@@ -1926,7 +1926,7 @@ for ind in report.get("indicators", []):
 def _render_trend_chart():
     mode = st.radio(
         "표시 모드",
-        ["📊 변동률 인덱스 (시작일=100)", "💹 절대값"],
+        ["💹 절대값", "📊 변동률 인덱스 (시작일=100)"],
         horizontal=True,
         key="chart_mode",
         help="변동률 인덱스는 시작일을 100으로 정규화해 세 통화의 상대 변동을 한 그래프에서 비교합니다.",

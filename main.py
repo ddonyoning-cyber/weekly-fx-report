@@ -163,7 +163,14 @@ def compute_stats(df: pd.DataFrame) -> dict:
 # ═══════════════════════════════════════════════════════
 # 그래프
 # ═══════════════════════════════════════════════════════
-def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
+def build_chart(df: pd.DataFrame, events: dict = None, normalized: bool = False) -> go.Figure:
+    """3개월 환율 추이 차트.
+    normalized=False: 절대값 (USD/KRW 좌축, CNY/KRW 우축, USD/CNY 우축 토글)
+    normalized=True : 시작일=100 정규화 인덱스 (단일 좌축, 세 통화 동시 비교)
+    """
+    if normalized:
+        return _build_chart_normalized(df, events)
+
     fig = make_subplots(specs=[[{"secondary_y": True}]])
 
     # 전주 구간 배경 강조
@@ -233,6 +240,92 @@ def build_chart(df: pd.DataFrame, events: dict = None) -> go.Figure:
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=10, r=10, t=50, b=10),
         xaxis=dict(tickformat="%m/%d", dtick=7 * 86400000),
+    )
+    return fig
+
+
+def _build_chart_normalized(df: pd.DataFrame, events: dict = None) -> go.Figure:
+    """시작일 = 100 정규화 인덱스 차트 (3통화 동일 스케일 비교)."""
+    base_usd = float(df["USD_KRW"].iloc[0])
+    base_cny = float(df["CNY_KRW"].iloc[0])
+    base_cross = float(df["USD_CNY"].iloc[0])
+    norm_usd = df["USD_KRW"] / base_usd * 100
+    norm_cny = df["CNY_KRW"] / base_cny * 100
+    norm_cross = df["USD_CNY"] / base_cross * 100
+
+    fig = go.Figure()
+
+    # 전주 음영
+    lw_dates = df.loc[LAST_WEEK_START:LAST_WEEK_END].index
+    shapes = []
+    if len(lw_dates) > 0:
+        x0_ms = int(lw_dates[0].timestamp() * 1000) - 43200000
+        x1_ms = int(lw_dates[-1].timestamp() * 1000) + 43200000
+        shapes.append(dict(type="rect", xref="x", yref="paper",
+                           x0=x0_ms, x1=x1_ms, y0=0, y1=1,
+                           fillcolor="rgba(0,0,0,0.06)", line=dict(width=0), layer="below"))
+    # 기준선 (100)
+    shapes.append(dict(type="line", xref="paper", yref="y",
+                       x0=0, x1=1, y0=100, y1=100,
+                       line=dict(color="#999", width=1, dash="dash"), layer="below"))
+
+    fig.add_trace(go.Scatter(
+        x=df.index, y=norm_usd, name="USD/KRW",
+        line=dict(color="#2E75B6", width=2),
+        customdata=df["USD_KRW"],
+        hovertemplate="%{x|%m/%d}  지수 %{y:.2f}  (절대값 %{customdata:,.2f}원)<extra>USD/KRW</extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=norm_cny, name="CNY/KRW",
+        line=dict(color="#C00000", width=2),
+        customdata=df["CNY_KRW"],
+        hovertemplate="%{x|%m/%d}  지수 %{y:.2f}  (절대값 %{customdata:,.2f}원)<extra>CNY/KRW</extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=norm_cross, name="USD/CNY (재정)",
+        line=dict(color="#548235", width=2, dash="dot"),
+        customdata=df["USD_CNY"],
+        hovertemplate="%{x|%m/%d}  지수 %{y:.2f}  (절대값 %{customdata:.4f})<extra>USD/CNY</extra>",
+    ))
+
+    # 이벤트 마커 (USD/KRW 정규화 라인 위에)
+    if events:
+        ev_x, ev_y, ev_labels = [], [], []
+        for d_str, label in sorted(events.items()):
+            ev = pd.Timestamp(d_str)
+            if ev not in df.index:
+                future = df.index[df.index >= ev]
+                if len(future) == 0:
+                    continue
+                ev = future[0]
+            ev_x.append(ev)
+            ev_y.append(float(norm_usd.loc[ev]))
+            ev_labels.append(f"📌 {label}")
+        if ev_x:
+            fig.add_trace(go.Scatter(
+                x=ev_x, y=ev_y, mode="markers",
+                marker=dict(size=8, color="#2E75B6", symbol="circle", opacity=0.5),
+                showlegend=False, name="이벤트",
+                hovertemplate="%{text}<extra></extra>",
+                text=ev_labels,
+            ))
+
+    # Y축 범위: 세 시리즈 합쳐서 ±5% 마진
+    all_norm = pd.concat([norm_usd, norm_cny, norm_cross])
+    lo, hi = all_norm.min(), all_norm.max()
+    margin = (hi - lo) * 0.15
+
+    fig.update_layout(
+        height=430, template="plotly_white", hovermode="x",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=10, r=10, t=50, b=10),
+        xaxis=dict(tickformat="%m/%d", dtick=7 * 86400000),
+        yaxis=dict(
+            title=dict(text=f"지수 (시작일 {df.index[0].strftime('%m/%d')} = 100)", font=dict(color="#444")),
+            range=[lo - margin, hi + margin],
+            tickformat=".1f",
+        ),
+        shapes=shapes,
     )
     return fig
 
@@ -1895,8 +1988,20 @@ for ind in report.get("indicators", []):
     except (ValueError, IndexError):
         continue
 
-fig = build_chart(df, events=_chart_events)
-st.plotly_chart(fig, use_container_width=True)
+@st.fragment
+def _render_trend_chart():
+    mode = st.radio(
+        "표시 모드",
+        ["📊 변동률 인덱스 (시작일=100)", "💹 절대값"],
+        horizontal=True,
+        key="chart_mode",
+        help="변동률 인덱스는 시작일을 100으로 정규화해 세 통화의 상대 변동을 한 그래프에서 비교합니다.",
+    )
+    normalized = mode.startswith("📊")
+    fig = build_chart(df, events=_chart_events, normalized=normalized)
+    st.plotly_chart(fig, use_container_width=True)
+
+_render_trend_chart()
 
 # 요약 테이블 (그래프 바로 아래)
 lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]

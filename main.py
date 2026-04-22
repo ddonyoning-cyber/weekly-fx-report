@@ -1239,11 +1239,32 @@ with st.spinner("AI가 외환 포지션을 요약하는 중..."):
 # ── UI 렌더링 ──
 
 # 최상단: AI 전략 한 줄 요약 (상세 분석은 USD/CNY 탭 의사결정 분석 박스에 있음)
+# 현재기준 외환차손익 (USD + CNY 보유 현금 평가손익 합계)
+_top_usd_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
+_top_cny_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
+_top_total_pnl = _top_usd_pnl + _top_cny_pnl
+
+def _pnl_seg(label, v):
+    if v == 0:
+        return f"{label} <b>0</b>"
+    color = "#C00000" if v > 0 else "#4A90D9"
+    arrow = "▲" if v > 0 else "▼"
+    return f"{label} <b style='color:{color};'>{arrow} {abs(v)/1_000_000:,.0f}백만 원</b>"
+
+pnl_status = "평가이익" if _top_total_pnl > 0 else ("평가손실" if _top_total_pnl < 0 else "보합")
+pnl_html = (
+    f"💰 <b>현재기준 외환차손익</b>: {_pnl_seg(pnl_status, _top_total_pnl)} "
+    f"<span style='color:#888;font-size:0.85rem;'>"
+    f"({_pnl_seg('🇺🇸', _top_usd_pnl)} / {_pnl_seg('🇨🇳', _top_cny_pnl)})"
+    f"</span>"
+)
+
 ai_lines = ai_strategy.replace("\n\n", "\n").strip().split("\n")
 ai_lines_html = "<br>".join(line.strip() for line in ai_lines if line.strip())
 st.markdown(
-    f'<div style="margin:6px 0 14px 0;padding:12px 16px;background:#f5f8ff;border-left:4px solid #2E75B6;border-radius:6px;font-size:0.9rem;line-height:1.65;">'
+    f'<div style="margin:6px 0 14px 0;padding:12px 16px;background:#f5f8ff;border-left:4px solid #2E75B6;border-radius:6px;font-size:0.9rem;line-height:1.7;">'
     f'<span style="font-weight:700;color:#2E75B6;font-size:0.88rem;">🤖 금주 핵심 요약</span><br>'
+    f'{pnl_html}<br>'
     f'{ai_lines_html}'
     f'</div>',
     unsafe_allow_html=True,

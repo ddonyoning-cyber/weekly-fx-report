@@ -1126,41 +1126,35 @@ if "구분" in ap_df.columns:
     usd_ap_long = float(sm["금액"].sum()) if not sm.empty else 0.0
     usd_ap_short = usd_ap_val - usd_ap_long
 
-# ── Claude API 자율 분석 ──
+# ── Claude API 자율 분석 (한 줄 요약) ──
 @st.cache_data(ttl=86400, show_spinner=False)
 def _ai_fx_strategy(context: str) -> str:
     if not ANTHROPIC_API_KEY:
-        return "⚠️ API 키가 설정되지 않아 AI 분석을 수행할 수 없습니다."
+        return "⚠️ API 키가 설정되지 않아 AI 요약을 수행할 수 없습니다."
     try:
         from anthropic import Anthropic
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=2000,
-            system="""너는 글로벌 기업의 외환 전략 최고 책임자(CFO)야.
-아래 데이터를 보고 '금주 외환 실행 전략 가이드'를 작성해.
+            max_tokens=400,
+            system="""너는 F&F 외환 트레저리 전략가야.
+아래 포지션 데이터를 보고 '금주 외환 실행 전략 한 줄 요약'을 작성해.
 
-[자율 분석 미션]
-1) USD 유동성 진단:
-   - 단기 미결 채무가 보유 현금+단기 채권보다 크면 '🚨 즉시 달러 매수 필요' 경고를 생성.
-   - 순 노출액이 (-)면 부족분만큼 환전 권고.
-
-2) CNY 수익 전략 (보유 잔액 기준, 채권채무 무시):
-   - 환전 시점: 금주 환율 전망과 장부가 대비 현재 환율을 비교해 지금 환전이 적절한지 판단.
-   - 환전 비중: 보유 CNY의 몇 %를 환전할지 구체 수치 제안 (예: 30%, 50%, 100%).
-   - 환전 대상: KRW(즉시 환차익 확정) vs USD(미래 결제 대비 가성비) 중 어느 쪽이 외환차손익 극대화에 유리한지 비교 분석.
+[출력 포맷] 정확히 다음 2줄만 출력 (다른 텍스트 금지):
+🇺🇸 <b>USD</b>: <한 줄 핵심 결론 + 근거 숫자 (60자 이내)>
+🇨🇳 <b>CNY</b>: <한 줄 핵심 결론 + 환전 비중·대상 (60자 이내)>
 
 [작성 규칙]
-- 두 섹션을 명확히 구분해서 작성:
-  ## 🚨 USD 유동성 진단
-  ## 💱 CNY 환전 전략
-- 결론부터 말하고, 근거 숫자를 반드시 포함.
-- 마크다운(볼드, 불렛). 한국어. 500자 이내.""",
+- 결론 우선: 환전/매수/유지/관망 중 무엇을 해야 하는지 동사로 시작
+- 근거 숫자 1개 이상 포함 (평가손익 %, 부족 금액 등)
+- HTML <b> 태그로 핵심 키워드 강조
+- 자세한 분석은 하지 말고 한 줄로 압축 (USD/CNY 탭에 상세 분석 따로 있음)
+- 한국어. 다른 텍스트나 마크다운 헤더 출력 금지.""",
             messages=[{"role": "user", "content": context}],
         )
         return msg.content[0].text.strip()
     except Exception as e:
-        return f"⚠️ AI 분석 실패: {e}"
+        return f"⚠️ AI 요약 실패: {e}"
 
 
 # ── 통화별 의사결정 분석 (Claude 직접 분석) ──
@@ -1239,16 +1233,21 @@ def _render_ai_decision(decision: dict):
     )
 
 
-with st.spinner("AI가 외환 포지션을 분석하는 중..."):
+with st.spinner("AI가 외환 포지션을 요약하는 중..."):
     ai_strategy = _ai_fx_strategy(summary_text)
 
 # ── UI 렌더링 ──
 
-# 최상단: AI 전략 제안
-with st.chat_message("assistant"):
-    st.markdown(f"**🤖 금주 외환 실행 전략 가이드**\n\n{ai_strategy}")
-
-st.markdown("")
+# 최상단: AI 전략 한 줄 요약 (상세 분석은 USD/CNY 탭 의사결정 분석 박스에 있음)
+ai_lines = ai_strategy.replace("\n\n", "\n").strip().split("\n")
+ai_lines_html = "<br>".join(line.strip() for line in ai_lines if line.strip())
+st.markdown(
+    f'<div style="margin:6px 0 14px 0;padding:12px 16px;background:#f5f8ff;border-left:4px solid #2E75B6;border-radius:6px;font-size:0.9rem;line-height:1.65;">'
+    f'<span style="font-weight:700;color:#2E75B6;font-size:0.88rem;">🤖 금주 핵심 요약</span><br>'
+    f'{ai_lines_html}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 # USD / CNY 탭 분리
 tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수익 전략"])

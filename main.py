@@ -2003,19 +2003,14 @@ def _render_trend_chart():
 
 _render_trend_chart()
 
-# 요약 테이블 (그래프 바로 아래)
-lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
-if not lw_data.empty:
-    summary = pd.DataFrame({
-        "": ["전주 평균", "전주 최고", "전주 최저", "3개월 평균"],
-        "USD/KRW": [f"{lw_data['USD_KRW'].mean():,.2f}", f"{lw_data['USD_KRW'].max():,.2f}",
-                    f"{lw_data['USD_KRW'].min():,.2f}", f"{stats['avg_3m']['USD_KRW']:,.2f}"],
-        "CNY/KRW": [f"{lw_data['CNY_KRW'].mean():,.2f}", f"{lw_data['CNY_KRW'].max():,.2f}",
-                    f"{lw_data['CNY_KRW'].min():,.2f}", f"{stats['avg_3m']['CNY_KRW']:,.2f}"],
-        "USD/CNY": [f"{lw_data['USD_CNY'].mean():.4f}", f"{lw_data['USD_CNY'].max():.4f}",
-                    f"{lw_data['USD_CNY'].min():.4f}", f"{stats['avg_3m']['USD_CNY']:.4f}"],
-    })
-    st.dataframe(summary, use_container_width=True, hide_index=True)
+# 요약 테이블 (그래프 바로 아래) — 3개월 평균만 표시
+summary = pd.DataFrame({
+    "": ["3개월 평균"],
+    "USD/KRW": [f"{stats['avg_3m']['USD_KRW']:,.2f}"],
+    "CNY/KRW": [f"{stats['avg_3m']['CNY_KRW']:,.2f}"],
+    "USD/CNY": [f"{stats['avg_3m']['USD_CNY']:.4f}"],
+})
+st.dataframe(summary, use_container_width=True, hide_index=True)
 
 st.divider()
 

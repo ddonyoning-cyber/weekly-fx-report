@@ -1219,6 +1219,14 @@ if "구분" in ap_df.columns:
     usd_ap_long = float(sm["금액"].sum()) if not sm.empty else 0.0
     usd_ap_short = usd_ap_val - usd_ap_long
 
+# CNY: 채권은 30일 이내/1년 이내 분리, 채무는 1년 이내 단일
+cny_ar_short = cny_ar_val
+cny_ar_long = 0.0
+if "구분" in ar_df.columns:
+    sm = ar_df[(ar_df["통화"] == "CNY") & (ar_df["구분"].str.contains("장기|이후", na=False))]
+    cny_ar_long = float(sm["금액"].sum()) if not sm.empty else 0.0
+    cny_ar_short = cny_ar_val - cny_ar_long
+
 # ── 통화별 의사결정 분석 (Claude 직접 분석) ──
 @st.cache_data(ttl=86400, show_spinner=False)
 def _ai_decision(currency: str, payload: str) -> dict:
@@ -1600,7 +1608,8 @@ with tab_cny:
         # ── 메인 보유 현황 표 (KRW 기준 고정) ──
         cny_cash_book_krw = cny_cash * cny_book if cny_book else 0
         cny_cash_mkt_krw = cny_cash * cny_mkt
-        cny_ar_mkt_krw = cny_ar_val * cny_mkt
+        cny_ar_short_krw = cny_ar_short * cny_mkt
+        cny_ar_long_krw = cny_ar_long * cny_mkt
         cny_ap_mkt_krw = cny_ap_val * cny_mkt
         cny_net = cny_cash + cny_ar_val - cny_ap_val
         cny_net_mkt_krw = cny_net * cny_mkt
@@ -1624,19 +1633,44 @@ with tab_cny:
                 return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
             return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
 
-        # 데이터 행: (항목, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
+        # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
         cny_rows = [
-            ("보유현금", cny_cash, cny_book, cny_cash_book_krw, cny_mkt, cny_cash_mkt_krw, cny_cash_pnl, False),
-            ("미결채권", cny_ar_val, 0, 0, cny_mkt, cny_ar_mkt_krw, 0, False),
-            ("미결채무", -cny_ap_val, 0, 0, cny_mkt, -cny_ap_mkt_krw, 0, True),
+            ("보유현금", "", cny_cash, cny_book, cny_cash_book_krw, cny_mkt, cny_cash_mkt_krw, cny_cash_pnl, False),
+            ("미결채권", "30일 이내", cny_ar_short, 0, 0, cny_mkt, cny_ar_short_krw, 0, False),
+            ("미결채권", "1년 이내", cny_ar_long, 0, 0, cny_mkt, cny_ar_long_krw, 0, False),
+            ("미결채무", "1년 이내", -cny_ap_val, 0, 0, cny_mkt, -cny_ap_mkt_krw, 0, True),
         ]
 
+        # 같은 항목명이 연속되면 rowspan으로 셀 병합
+        cny_labels = [r[0] for r in cny_rows]
+        cny_rowspan_map = {}
+        cny_skip_label = set()
+        i = 0
+        while i < len(cny_labels):
+            j = i
+            while j + 1 < len(cny_labels) and cny_labels[j + 1] == cny_labels[i]:
+                j += 1
+            if j > i:
+                cny_rowspan_map[i] = j - i + 1
+                for k in range(i + 1, j + 1):
+                    cny_skip_label.add(k)
+            i = j + 1
+
         cny_rows_html = ""
-        for label, amt, book, book_krw_v, mkt, mkt_krw_v, pnl, is_ap in cny_rows:
+        for idx, (label, sub, amt, book, book_krw_v, mkt, mkt_krw_v, pnl, is_ap) in enumerate(cny_rows):
             amt_color = "color:#C00000;" if (is_ap and amt < 0) else ""
+            if idx in cny_skip_label:
+                label_cell = ""
+            else:
+                rs = cny_rowspan_map.get(idx, 1)
+                label_cell = (
+                    f'<td rowspan="{rs}" style="padding:9px 12px;border:1px solid #eee;'
+                    f'font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">{label}</td>'
+                )
             cny_rows_html += (
                 f'<tr>'
-                f'<td style="padding:9px 12px;border:1px solid #eee;font-weight:600;background:#f8f9fc;text-align:center;">{label}</td>'
+                f'{label_cell}'
+                f'<td style="padding:9px 12px;border:1px solid #eee;color:#555;">{sub}</td>'
                 f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;{amt_color}">{_fc_amt(amt)}</td>'
                 f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_rate(book)}</td>'
                 f'<td style="padding:9px 12px;border:1px solid #eee;text-align:right;">{_fc_krw_mil(book_krw_v)}</td>'
@@ -1651,6 +1685,7 @@ with tab_cny:
         cny_rows_html += (
             f'<tr style="background:#ececec;">'
             f'<td style="padding:13px 12px;border:1px solid #ccc;font-weight:700;font-size:1.05rem;text-align:center;">순노출금액</td>'
+            f'<td style="padding:13px 12px;border:1px solid #ccc;color:#444;font-size:0.9rem;">현금 + 채권 − 채무</td>'
             f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;font-weight:700;font-size:1.1rem;{cny_net_color}">{_fc_amt(cny_net)}</td>'
             f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
             f'<td style="padding:13px 12px;border:1px solid #ccc;text-align:right;color:#888;">-</td>'
@@ -1665,6 +1700,7 @@ with tab_cny:
             # 헤더 1행
             f'<tr style="background:#f0f4ff;text-align:center;">'
             f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목</th>'
+            f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">구분</th>'
             f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액(CNY)</th>'
             f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
             f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
@@ -1681,7 +1717,8 @@ with tab_cny:
             f'<span style="font-size:0.72rem;font-weight:400;color:#666;">(백만원)</span></th>'
             f'</tr>'
             f'{cny_rows_html}'
-            f'</table>',
+            f'</table>'
+            f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 30일 이내 / 1년 이내 &nbsp;·&nbsp; 채무 - 1년 이내</div>',
             unsafe_allow_html=True
         )
 
@@ -1692,8 +1729,8 @@ with tab_cny:
             f"[CNY 포지션 현황]\n"
             f"- 보유 현금: {cny_cash:,.0f} CNY (장부 평균 {cny_book:,.2f}원, 당일 매매기준율 {cny_mkt:,.2f}원)\n"
             f"- 평가손익: {cny_cash_pnl:+,.0f}원 ({cny_pnl_pct_v:+.2f}%) → 백만원 단위 {cny_cash_pnl/1_000_000:+,.0f}\n"
-            f"- 미결 채권 (AR): {cny_ar_val:,.0f} CNY\n"
-            f"- 미결 채무 (AP): {cny_ap_val:,.0f} CNY\n"
+            f"- 미결 채권 (AR): 30일 이내 {cny_ar_short:,.0f} / 1년 이내 {cny_ar_long:,.0f} CNY (합계 {cny_ar_val:,.0f})\n"
+            f"- 미결 채무 (AP): 1년 이내 {cny_ap_val:,.0f} CNY\n"
             f"- 순 노출금액 (현금+AR-AP): {cny_net:+,.0f} CNY = {cny_net_mkt_krw/1_000_000:+,.0f}백만 원\n"
             f"- 환율 민감도: 환율 10원 변동 시 약 {cny_sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
             f"[금주 CNY/KRW 전망]\n"

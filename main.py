@@ -1718,7 +1718,7 @@ with tab_cny:
             f'</tr>'
             f'{cny_rows_html}'
             f'</table>'
-            f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 단기(30일 이내) / 장기(1년 이내) &nbsp;·&nbsp; 채무 - 장기(1년 이내)</div>',
+            f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권: 전기일 기준(단기 30일 내 / 장기 누적분) &nbsp;·&nbsp; 채무: 만기일 기준(잔여분)</div>',
             unsafe_allow_html=True
         )
 

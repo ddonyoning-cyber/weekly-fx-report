@@ -1755,8 +1755,7 @@ with tab_cny:
 
         # ── 보유현금 환전 시뮬 표 ──
         st.markdown(
-            f"<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 보유현금 환전 시뮬레이션</div>"
-            f"<div style='font-size:0.82rem;color:#666;margin-top:2px;'>표의 <b>보유현금 {cny_cash:,.0f} CNY</b> 기준 환전 시 시나리오</div>",
+            "<div style='margin-top:18px;font-weight:700;font-size:0.95rem;'>💱 보유현금 환전 시뮬레이션</div>",
             unsafe_allow_html=True,
         )
         opt1, opt2 = st.columns(2)

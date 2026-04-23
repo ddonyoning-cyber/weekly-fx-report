@@ -2100,7 +2100,17 @@ else:
 def _gen_html():
     chart_html = build_chart(df, events=_chart_events).to_html(include_plotlyjs="cdn", full_html=False)
 
-    # 보유현황 테이블
+    # 보유현황 테이블 — 현재 USD/CNY 보유 데이터로 구성
+    currencies = ["USD", "CNY"]
+    amt = [usd_cash, cny_cash]
+    book = [usd_book, cny_book]
+    mkt = [usd_mkt, cny_mkt]
+    book_krw = [usd_cash * usd_book if usd_book else 0, cny_cash * cny_book if cny_book else 0]
+    mkt_krw = [usd_cash * usd_mkt, cny_cash * cny_mkt]
+    pnl = [(usd_mkt - usd_book) * usd_cash if usd_book else 0,
+           (cny_mkt - cny_book) * cny_cash if cny_book else 0]
+    total_pnl = sum(pnl)
+
     hold_rows = ""
     for i in range(len(currencies)):
         p = pnl[i]

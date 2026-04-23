@@ -2003,6 +2003,9 @@ c3.metric("USD/CNY 재정 (전주 평균)", f"{stats['avg_lw']['USD_CNY']:.4f}",
 
 # 전주 복기: 전망 vs 실적
 
+# 전주 실적 데이터 (분석용)
+lw_data = df.loc[LAST_WEEK_START:LAST_WEEK_END]
+
 # 전주 PDF에서 밴드 추출 (국민은행 전주 전망)
 prev_forecast = {}
 try:

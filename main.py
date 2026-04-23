@@ -1305,6 +1305,50 @@ def _render_ai_decision(decision: dict):
 
 # ── UI 렌더링 ──
 
+# 모듈 레벨에서 USD/CNY 의사결정 분석 미리 계산 (탭 + HTML 다운로드 양쪽에서 재사용)
+_g_cash_pnl = (usd_mkt - usd_book) * usd_cash if usd_book else 0
+_g_pnl_pct = (usd_mkt - usd_book) / usd_book * 100 if usd_book else 0
+_g_net_exposure = usd_cash + usd_ar_short + usd_ar_long - usd_ap_short - usd_ap_long
+_g_net_mkt_krw = _g_net_exposure * usd_mkt
+_g_usd_liquidity = usd_cash + usd_ar_short - usd_ap_short
+_g_sens_per_10 = abs(_g_net_exposure) * 10
+_g_usd_payload = (
+    f"[USD 포지션 현황]\n"
+    f"- 보유 현금: {usd_cash:,.0f} USD (장부 평균 {usd_book:,.2f}원, 당일 매매기준율 {usd_mkt:,.2f}원)\n"
+    f"- 평가손익: {_g_cash_pnl:+,.0f}원 ({_g_pnl_pct:+.2f}%) → 백만원 단위 {_g_cash_pnl/1_000_000:+,.0f}\n"
+    f"- 미결 채권 (AR): 단기 {usd_ar_short:,.0f} / 장기 {usd_ar_long:,.0f} USD\n"
+    f"- 미결 채무 (AP): 단기 {usd_ap_short:,.0f} / 장기 {usd_ap_long:,.0f} USD\n"
+    f"- 단기 유동성 (현금+단기AR-단기AP): {_g_usd_liquidity:+,.0f} USD\n"
+    f"- 순 노출금액 (현금+AR-AP): {_g_net_exposure:+,.0f} USD = {_g_net_mkt_krw/1_000_000:+,.0f}백만 원\n"
+    f"- 환율 민감도: 환율 10원 변동 시 약 {_g_sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
+    f"[금주 USD/KRW 전망]\n"
+    f"- 밴드: {usd_lo:,} ~ {usd_hi:,}원 (중간 {(usd_lo+usd_hi)/2:,.1f})\n"
+    f"- 방향: {usd_dir}"
+)
+
+_g_cny_cash_pnl = (cny_mkt - cny_book) * cny_cash if cny_book else 0
+_g_cny_pnl_pct = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
+_g_cny_net = cny_cash + cny_ar_val - cny_ap_val
+_g_cny_net_mkt_krw = _g_cny_net * cny_mkt
+_g_cny_sens_per_10 = abs(_g_cny_net) * 10
+_g_cny_payload = (
+    f"[CNY 포지션 현황]\n"
+    f"- 보유 현금: {cny_cash:,.0f} CNY (장부 평균 {cny_book:,.2f}원, 당일 매매기준율 {cny_mkt:,.2f}원)\n"
+    f"- 평가손익: {_g_cny_cash_pnl:+,.0f}원 ({_g_cny_pnl_pct:+.2f}%) → 백만원 단위 {_g_cny_cash_pnl/1_000_000:+,.0f}\n"
+    f"- 미결 채권 (AR): 30일 이내 {cny_ar_short:,.0f} / 1년 이내 {cny_ar_long:,.0f} CNY (합계 {cny_ar_val:,.0f})\n"
+    f"- 미결 채무 (AP): 1년 이내 {cny_ap_val:,.0f} CNY\n"
+    f"- 순 노출금액 (현금+AR-AP): {_g_cny_net:+,.0f} CNY = {_g_cny_net_mkt_krw/1_000_000:+,.0f}백만 원\n"
+    f"- 환율 민감도: 환율 10원 변동 시 약 {_g_cny_sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
+    f"[금주 CNY/KRW 전망]\n"
+    f"- CNY/KRW 밴드: {cny_lo:,} ~ {cny_hi:,}원 (중간 {(cny_lo+cny_hi)/2:,.1f})\n"
+    f"- USD/CNY 재정환율 밴드: {cross_lo} ~ {cross_hi} (당일 {cross_rate:.4f})\n"
+    f"- 환전 대상은 KRW(즉시 차익 확정) 또는 USD(미래 결제 대비)로 분기 판단 필요"
+)
+
+with st.spinner("Claude가 USD·CNY 의사결정 분석 중..."):
+    g_usd_decision = _ai_decision("USD", _g_usd_payload)
+    g_cny_decision = _ai_decision("CNY", _g_cny_payload)
+
 # USD / CNY 탭 분리
 tab_usd, tab_cny = st.tabs(["🇺🇸 USD 유동성 진단", "🇨🇳 CNY 수익 전략"])
 
@@ -1489,24 +1533,8 @@ with tab_usd:
         unsafe_allow_html=True
     )
 
-    # ── 의사결정 분석 (Claude 직접 분석) ──
-    sens_per_10 = abs(net_exposure) * 10  # 환율 10원 변동 시 KRW
-    usd_payload = (
-        f"[USD 포지션 현황]\n"
-        f"- 보유 현금: {usd_cash:,.0f} USD (장부 평균 {usd_book:,.2f}원, 당일 매매기준율 {usd_mkt:,.2f}원)\n"
-        f"- 평가손익: {cash_pnl:+,.0f}원 ({pnl_pct:+.2f}%) → 백만원 단위 {cash_pnl/1_000_000:+,.0f}\n"
-        f"- 미결 채권 (AR): 단기 {usd_ar_short:,.0f} / 장기 {usd_ar_long:,.0f} USD\n"
-        f"- 미결 채무 (AP): 단기 {usd_ap_short:,.0f} / 장기 {usd_ap_long:,.0f} USD\n"
-        f"- 단기 유동성 (현금+단기AR-단기AP): {usd_liquidity:+,.0f} USD\n"
-        f"- 순 노출금액 (현금+AR-AP): {net_exposure:+,.0f} USD = {net_mkt_krw/1_000_000:+,.0f}백만 원\n"
-        f"- 환율 민감도: 환율 10원 변동 시 약 {sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
-        f"[금주 USD/KRW 전망]\n"
-        f"- 밴드: {usd_lo:,} ~ {usd_hi:,}원 (중간 {(usd_lo+usd_hi)/2:,.1f})\n"
-        f"- 방향: {usd_dir}"
-    )
-    with st.spinner("Claude가 USD 의사결정 분석 중..."):
-        usd_decision = _ai_decision("USD", usd_payload)
-    _render_ai_decision(usd_decision)
+    # ── 의사결정 분석 (모듈 레벨에서 미리 계산된 결과 렌더) ──
+    _render_ai_decision(g_usd_decision)
 
 with tab_cny:
     cny_pnl_total = (cny_mkt - cny_book) * cny_cash if cny_book else 0
@@ -1722,25 +1750,8 @@ with tab_cny:
             unsafe_allow_html=True
         )
 
-        # ── 의사결정 분석 (Claude 직접 분석) ──
-        cny_pnl_pct_v = (cny_mkt - cny_book) / cny_book * 100 if cny_book else 0
-        cny_sens_per_10 = abs(cny_net) * 10  # 10원 변동 시 KRW
-        cny_payload = (
-            f"[CNY 포지션 현황]\n"
-            f"- 보유 현금: {cny_cash:,.0f} CNY (장부 평균 {cny_book:,.2f}원, 당일 매매기준율 {cny_mkt:,.2f}원)\n"
-            f"- 평가손익: {cny_cash_pnl:+,.0f}원 ({cny_pnl_pct_v:+.2f}%) → 백만원 단위 {cny_cash_pnl/1_000_000:+,.0f}\n"
-            f"- 미결 채권 (AR): 30일 이내 {cny_ar_short:,.0f} / 1년 이내 {cny_ar_long:,.0f} CNY (합계 {cny_ar_val:,.0f})\n"
-            f"- 미결 채무 (AP): 1년 이내 {cny_ap_val:,.0f} CNY\n"
-            f"- 순 노출금액 (현금+AR-AP): {cny_net:+,.0f} CNY = {cny_net_mkt_krw/1_000_000:+,.0f}백만 원\n"
-            f"- 환율 민감도: 환율 10원 변동 시 약 {cny_sens_per_10/10_000:,.0f}만 원 손익 변동\n\n"
-            f"[금주 CNY/KRW 전망]\n"
-            f"- CNY/KRW 밴드: {cny_lo:,} ~ {cny_hi:,}원 (중간 {(cny_lo+cny_hi)/2:,.1f})\n"
-            f"- USD/CNY 재정환율 밴드: {cross_lo} ~ {cross_hi} (당일 {cross_rate:.4f})\n"
-            f"- 환전 대상은 KRW(즉시 차익 확정) 또는 USD(미래 결제 대비)로 분기 판단 필요"
-        )
-        with st.spinner("Claude가 CNY 의사결정 분석 중..."):
-            cny_decision = _ai_decision("CNY", cny_payload)
-        _render_ai_decision(cny_decision)
+        # ── 의사결정 분석 (모듈 레벨에서 미리 계산된 결과 렌더) ──
+        _render_ai_decision(g_cny_decision)
 
         # ── 보유현금 환전 시뮬 표 ──
         st.markdown(
@@ -2100,33 +2111,141 @@ else:
 def _gen_html():
     chart_html = build_chart(df, events=_chart_events).to_html(include_plotlyjs="cdn", full_html=False)
 
-    # 보유현황 테이블 — 현재 USD/CNY 보유 데이터로 구성
-    currencies = ["USD", "CNY"]
-    amt = [usd_cash, cny_cash]
-    book = [usd_book, cny_book]
-    mkt = [usd_mkt, cny_mkt]
-    book_krw = [usd_cash * usd_book if usd_book else 0, cny_cash * cny_book if cny_book else 0]
-    mkt_krw = [usd_cash * usd_mkt, cny_cash * cny_mkt]
-    pnl = [(usd_mkt - usd_book) * usd_cash if usd_book else 0,
-           (cny_mkt - cny_book) * cny_cash if cny_book else 0]
-    total_pnl = sum(pnl)
+    # ── 포맷터 ──
+    def f_amt(v):
+        return "-" if not v else f"{v:,.0f}"
+    def f_rate(v):
+        if not v: return "-"
+        if abs(v - round(v)) < 1e-6:
+            return f"{int(round(v)):,}"
+        return f"{v:,.2f}"
+    def f_krw_mil(v):
+        return "-" if not v else f"{v/1_000_000:,.0f}"
+    def f_pnl_mil(v):
+        if not v: return "-"
+        val = abs(v) / 1_000_000
+        if v > 0:
+            return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
+        return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
 
-    hold_rows = ""
-    for i in range(len(currencies)):
-        p = pnl[i]
-        pc = "#C00000" if p > 0 else "#4A90D9"
-        hold_rows += (
-            f'<tr><td>{latest_date}</td><td>{currencies[i]}</td>'
-            f'<td style="text-align:right;">{amt[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{book[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{book_krw[i]:,.0f}</td>'
-            f'<td style="text-align:right;">{mkt[i]:,.2f}</td>'
-            f'<td style="text-align:right;">{mkt_krw[i]:,.0f}</td>'
-            f'<td style="text-align:right;font-weight:700;color:{pc};">{p:+,.0f}</td></tr>'
+    # ── USD 표 ──
+    cash_book_krw = usd_cash * usd_book if usd_book else 0
+    cash_mkt_krw = usd_cash * usd_mkt
+    ar_s_krw = usd_ar_short * usd_mkt
+    ar_l_krw = usd_ar_long * usd_mkt
+    ap_s_krw = usd_ap_short * usd_mkt
+    ap_l_krw = usd_ap_long * usd_mkt
+
+    usd_rows_html = (
+        f'<tr><td rowspan="1" style="font-weight:600;background:#f8f9fc;text-align:center;">보유현금</td>'
+        f'<td></td>'
+        f'<td style="text-align:right;">{f_amt(usd_cash)}</td>'
+        f'<td style="text-align:right;">{f_rate(usd_book)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cash_book_krw)}</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cash_mkt_krw)}</td>'
+        f'<td style="text-align:right;">{f_pnl_mil(_g_cash_pnl)}</td></tr>'
+        f'<tr><td rowspan="2" style="font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">미결채권</td>'
+        f'<td>단기 회수예정</td>'
+        f'<td style="text-align:right;">{f_amt(usd_ar_short)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(ar_s_krw)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr><td>장기 누적미결</td>'
+        f'<td style="text-align:right;">{f_amt(usd_ar_long)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(ar_l_krw)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr><td rowspan="2" style="font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">미결채무</td>'
+        f'<td>단기 지급예정</td>'
+        f'<td style="text-align:right;color:#C00000;">{f_amt(-usd_ap_short)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(-ap_s_krw)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr><td>장기 미결현황</td>'
+        f'<td style="text-align:right;color:#C00000;">{f_amt(-usd_ap_long)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(-ap_l_krw)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr style="background:#ececec;font-weight:700;">'
+        f'<td style="text-align:center;">순노출금액</td>'
+        f'<td>현금 + 채권 − 채무</td>'
+        f'<td style="text-align:right;">{f_amt(_g_net_exposure)}</td>'
+        f'<td style="text-align:right;color:#888;">-</td><td style="text-align:right;color:#888;">-</td>'
+        f'<td style="text-align:right;">{f_rate(usd_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(_g_net_mkt_krw)}</td>'
+        f'<td style="text-align:right;">{f_pnl_mil(_g_cash_pnl)}</td></tr>'
+    )
+
+    # ── CNY 표 ──
+    cny_cash_book_krw_h = cny_cash * cny_book if cny_book else 0
+    cny_cash_mkt_krw_h = cny_cash * cny_mkt
+    cny_ar_s_krw_h = cny_ar_short * cny_mkt
+    cny_ar_l_krw_h = cny_ar_long * cny_mkt
+    cny_ap_krw_h = cny_ap_val * cny_mkt
+
+    cny_rows_html_h = (
+        f'<tr><td style="font-weight:600;background:#f8f9fc;text-align:center;">보유현금</td>'
+        f'<td></td>'
+        f'<td style="text-align:right;">{f_amt(cny_cash)}</td>'
+        f'<td style="text-align:right;">{f_rate(cny_book)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cny_cash_book_krw_h)}</td>'
+        f'<td style="text-align:right;">{f_rate(cny_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cny_cash_mkt_krw_h)}</td>'
+        f'<td style="text-align:right;">{f_pnl_mil(_g_cny_cash_pnl)}</td></tr>'
+        f'<tr><td rowspan="2" style="font-weight:600;background:#f8f9fc;text-align:center;vertical-align:middle;">미결채권</td>'
+        f'<td>단기 회수예정</td>'
+        f'<td style="text-align:right;">{f_amt(cny_ar_short)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(cny_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cny_ar_s_krw_h)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr><td>장기 누적미결</td>'
+        f'<td style="text-align:right;">{f_amt(cny_ar_long)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(cny_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(cny_ar_l_krw_h)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr><td style="font-weight:600;background:#f8f9fc;text-align:center;">미결채무</td>'
+        f'<td>장기 미결현황</td>'
+        f'<td style="text-align:right;color:#C00000;">{f_amt(-cny_ap_val)}</td>'
+        f'<td style="text-align:right;">-</td><td style="text-align:right;">-</td>'
+        f'<td style="text-align:right;">{f_rate(cny_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(-cny_ap_krw_h)}</td>'
+        f'<td style="text-align:right;">-</td></tr>'
+        f'<tr style="background:#ececec;font-weight:700;">'
+        f'<td style="text-align:center;">순노출금액</td>'
+        f'<td>현금 + 채권 − 채무</td>'
+        f'<td style="text-align:right;">{f_amt(_g_cny_net)}</td>'
+        f'<td style="text-align:right;color:#888;">-</td><td style="text-align:right;color:#888;">-</td>'
+        f'<td style="text-align:right;">{f_rate(cny_mkt)}</td>'
+        f'<td style="text-align:right;">{f_krw_mil(_g_cny_net_mkt_krw)}</td>'
+        f'<td style="text-align:right;">{f_pnl_mil(_g_cny_cash_pnl)}</td></tr>'
+    )
+
+    # ── AI 의사결정 분석 박스 (HTML) ──
+    def render_ai_box(decision):
+        if decision.get("error"):
+            return f'<div style="background:#fdf2f2;border-left:4px solid #C00000;padding:10px 14px;margin:8px 0;font-size:0.88rem;">⚠️ AI 분석 실패: {decision["error"]}</div>'
+        risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in decision.get("risks", []))
+        actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in decision.get("actions", []))
+        return (
+            f'<div style="background:#fafbff;border:1px solid #d6d9e3;border-radius:8px;padding:14px 18px;margin:8px 0 16px;font-size:0.9rem;line-height:1.7;">'
+            f'<div style="font-weight:700;font-size:0.95rem;margin-bottom:8px;color:#2E75B6;">📋 의사결정 분석 <span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI)</span></div>'
+            f'<div style="margin-bottom:8px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{decision.get("current","")}</div>'
+            f'<div style="margin-bottom:8px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html}</div>'
+            f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html}</div>'
+            f'</div>'
         )
-    tp_color = "#C00000" if total_pnl > 0 else "#4A90D9"
 
-    # 전망 밴드
+    usd_ai_html = render_ai_box(g_usd_decision)
+    cny_ai_html = render_ai_box(g_cny_decision)
+
+    # 전망 밴드 방향 표시
     def _hdir(d):
         c = {"상승":"#C00000","하락":"#4A90D9"}.get(d,"#2E8B57")
         a = {"상승":"↑","하락":"↓"}.get(d,"→")
@@ -2137,6 +2256,15 @@ def _gen_html():
     cny_f = "<br>".join(f"• {f}" for f in cny_factors)
     cross_f = "<br>".join(f"• {f}" for f in cross_factors)
 
+    # 표 헤더 공통
+    pos_header = (
+        '<tr><th rowspan="2">항목</th><th rowspan="2">구분</th><th rowspan="2">금액</th>'
+        '<th colspan="2">장부 기준</th><th colspan="2">당일 기준</th>'
+        '<th rowspan="2">현재기준 외환차손익<br><span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th></tr>'
+        '<tr><th>보유 평균환율</th><th>원화환산금액 <span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th>'
+        '<th>매매기준율</th><th>원화환산금액 <span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th></tr>'
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8">
 <title>주간 환율 리포트 — 2026년 4월 2주차</title>
@@ -2144,25 +2272,33 @@ def _gen_html():
 body{{font-family:'Malgun Gothic',sans-serif;margin:0;padding:20px 40px;color:#222;background:#fff;}}
 h2{{margin-bottom:4px;}} .cap{{font-size:0.8rem;color:#888;margin-bottom:16px;}}
 .sh{{background:linear-gradient(90deg,#2E75B6,#4a90d9);color:white;padding:10px 20px;border-radius:8px;font-size:1.1rem;font-weight:700;margin:24px 0 12px;}}
+.subh{{font-size:1.0rem;font-weight:700;margin:18px 0 8px;color:#2E75B6;}}
 table{{width:100%;border-collapse:collapse;font-size:0.88rem;margin:8px 0;}}
 th{{background:#f0f4ff;padding:8px 10px;text-align:center;border:1px solid #ddd;font-weight:700;}}
 td{{padding:8px 10px;border:1px solid #eee;}}
+.note{{font-size:0.78rem;color:#888;margin-top:4px;}}
+.rate-info{{background:#f0f4ff;border-radius:6px;padding:8px 14px;margin:6px 0;font-size:0.85rem;}}
 .mc{{display:flex;gap:16px;margin:12px 0;}}
 .mc>div{{flex:1;background:linear-gradient(135deg,#667eea08,#764ba208);border:1px solid #ddd;border-radius:12px;padding:16px 20px;}}
 .mc .lb{{font-size:0.82rem;color:#555;}} .mc .vl{{font-size:1.8rem;font-weight:700;margin:4px 0;}}
 .ft{{font-size:0.75rem;color:#aaa;margin-top:20px;border-top:1px solid #eee;padding-top:8px;}}
 </style></head><body>
 <h2>📊 주간 환율 리포트 — 2026년 4월 2주차</h2>
-<div class="cap">한국은행 ECOS API · 국민은행/신한은행 PDF · 서울파이낸셜</div>
+<div class="cap">한국은행 ECOS API · 국민은행/신한은행 PDF · 서울파이낸셜 · Claude AI 의사결정 분석</div>
 
-<div class="sh">1. 당사 외화 보유 현황 (매매기준율: {latest_date})</div>
-<table>
-<tr><th rowspan="2">날짜</th><th rowspan="2">통화</th><th rowspan="2">보유금액</th>
-<th colspan="2">장부 기준</th><th colspan="2">당일 기준</th><th rowspan="2">외환차손익(원)</th></tr>
-<tr><th>보유 평균환율</th><th>원화환산금액</th><th>매매기준율</th><th>원화환산금액</th></tr>
-{hold_rows}
-</table>
-<div style="text-align:right;font-size:1rem;font-weight:700;color:{tp_color};margin-top:8px;">현재기준 외환차손익: {total_pnl:+,.0f}원</div>
+<div class="sh">1. 주간 외환 관리 가이드라인 ({latest_date} 기준)</div>
+
+<div class="subh">🇺🇸 USD 유동성 진단</div>
+<div class="rate-info">📊 <b>당일 매매기준율</b>: {usd_mkt:,.2f}원 &nbsp;|&nbsp; <b>금주 전망 중간</b>: {(usd_lo+usd_hi)/2:,.1f}원 (밴드 {usd_lo:,}~{usd_hi:,})</div>
+<table>{pos_header}{usd_rows_html}</table>
+<div class="note">참고) 채권: 전기일 기준(단기 90일 내 / 장기 누적분) · 채무: 만기일 기준(단기 30일 내 / 잔여분)</div>
+{usd_ai_html}
+
+<div class="subh">🇨🇳 CNY 수익 전략</div>
+<div class="rate-info">📊 <b>당일 매매기준율</b>: {cny_mkt:,.2f}원 &nbsp;|&nbsp; <b>금주 전망 중간</b>: {(cny_lo+cny_hi)/2:,.1f}원 (밴드 {cny_lo}~{cny_hi})</div>
+<table>{pos_header.replace('금액', '금액(CNY)').replace('항목</th><th rowspan="2">구분', '항목</th><th rowspan="2">구분')}{cny_rows_html_h}</table>
+<div class="note">참고) 채권: 전기일 기준(단기 30일 내 / 장기 누적분) · 채무: 만기일 기준(잔여분)</div>
+{cny_ai_html}
 
 <div class="sh">2. 금주 환율 전망 ({REPORT_WEEK_START[4:6]}/{REPORT_WEEK_START[6:]} ~ {REPORT_WEEK_END[4:6]}/{REPORT_WEEK_END[6:]})</div>
 <div class="mc">
@@ -2189,7 +2325,7 @@ td{{padding:8px 10px;border:1px solid #eee;}}
 <div><div class="lb">USD/CNY (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_CNY']:.4f}</div></div>
 </div>
 
-<div class="ft">ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · 2026년 4월 2주차 리포트</div>
+<div class="ft">ⓒ F&F 자금팀 · 한국은행 ECOS API · 서울파이낸셜 · Claude AI · 2026년 4월 2주차 리포트</div>
 </body></html>"""
 
 st.divider()

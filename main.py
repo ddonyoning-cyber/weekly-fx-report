@@ -1390,10 +1390,10 @@ with tab_usd:
     # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
     rows = [
         ("보유현금", "", usd_cash, usd_book, cash_book_krw, usd_mkt, cash_mkt_krw, cash_pnl, False),
-        ("미결채권", "60일 이내", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
-        ("미결채권", "1년 이내", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
-        ("미결채무", "30일 이내", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
-        ("미결채무", "1년 이내", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
+        ("미결채권", "단기 회수예정", usd_ar_short, 0, 0, usd_mkt, ar_s_krw, 0, False),
+        ("미결채권", "장기 누적미결", usd_ar_long, 0, 0, usd_mkt, ar_l_krw, 0, False),
+        ("미결채무", "단기 지급예정", -usd_ap_short, 0, 0, usd_mkt, -ap_s_krw, 0, True),
+        ("미결채무", "장기 미결현황", -usd_ap_long, 0, 0, usd_mkt, -ap_l_krw, 0, True),
     ]
 
     pnl_pct = (usd_mkt - usd_book) / usd_book * 100 if usd_book else 0
@@ -1485,7 +1485,7 @@ with tab_usd:
         f'</tr>'
         f'{rows_html}'
         f'</table>'
-        f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 60일 이내 / 1년 이내 &nbsp;·&nbsp; 채무 - 30일 이내 / 1년 이내</div>',
+        f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 단기(60일 이내) / 장기(1년 이내) &nbsp;·&nbsp; 채무 - 단기(30일 이내) / 장기(1년 이내)</div>',
         unsafe_allow_html=True
     )
 
@@ -1636,9 +1636,9 @@ with tab_cny:
         # 데이터 행: (항목, 구분, 외화금액, 장부환율, 장부원화, 당일환율, 당일원화, 현재기준 외환차손익, is_ap)
         cny_rows = [
             ("보유현금", "", cny_cash, cny_book, cny_cash_book_krw, cny_mkt, cny_cash_mkt_krw, cny_cash_pnl, False),
-            ("미결채권", "30일 이내", cny_ar_short, 0, 0, cny_mkt, cny_ar_short_krw, 0, False),
-            ("미결채권", "1년 이내", cny_ar_long, 0, 0, cny_mkt, cny_ar_long_krw, 0, False),
-            ("미결채무", "1년 이내", -cny_ap_val, 0, 0, cny_mkt, -cny_ap_mkt_krw, 0, True),
+            ("미결채권", "단기 회수예정", cny_ar_short, 0, 0, cny_mkt, cny_ar_short_krw, 0, False),
+            ("미결채권", "장기 누적미결", cny_ar_long, 0, 0, cny_mkt, cny_ar_long_krw, 0, False),
+            ("미결채무", "장기 미결현황", -cny_ap_val, 0, 0, cny_mkt, -cny_ap_mkt_krw, 0, True),
         ]
 
         # 같은 항목명이 연속되면 rowspan으로 셀 병합
@@ -1718,7 +1718,7 @@ with tab_cny:
             f'</tr>'
             f'{cny_rows_html}'
             f'</table>'
-            f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 30일 이내 / 1년 이내 &nbsp;·&nbsp; 채무 - 1년 이내</div>',
+            f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">참고) 채권 - 단기(30일 이내) / 장기(1년 이내) &nbsp;·&nbsp; 채무 - 장기(1년 이내)</div>',
             unsafe_allow_html=True
         )
 

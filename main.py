@@ -1118,6 +1118,7 @@ with st.sidebar:
 KRW_COL_CANDIDATES = ["원화금액", "금액(KRW)", "금액(원화)", "금액(현지 통화)", "KRW", "원화"]
 FC_COL_CANDIDATES = ["외화금액", "금액(전표 통화)", "금액"]
 CURRENCY_COL_CANDIDATES = ["통화", "Currency", "currency", "통화코드", "통화 코드", "CUR", "Cur"]
+RATE_COL_CANDIDATES = ["보유환율", "보유 평균환율", "장부 기준", "장부기준", "장부 환율", "평균환율"]
 
 def _detect_col(df, candidates):
     for c in candidates:
@@ -1134,48 +1135,138 @@ def _to_float(x):
     except (ValueError, TypeError):
         return 0.0
 
+def _read_with_encoding(uploaded):
+    """업로드된 CSV/Excel을 인코딩 자동 시도해서 읽음."""
+    if uploaded.name.lower().endswith(".csv"):
+        last_err = None
+        for enc in ["utf-8-sig", "cp949", "euc-kr", "utf-8"]:
+            try:
+                uploaded.seek(0)
+                return pd.read_csv(uploaded, encoding=enc, dtype=str, keep_default_na=False)
+            except (UnicodeDecodeError, pd.errors.ParserError) as e:
+                last_err = e
+                continue
+        uploaded.seek(0)
+        return pd.read_csv(uploaded, encoding="utf-8", errors="replace", dtype=str, keep_default_na=False)
+    return pd.read_excel(uploaded, dtype=str)
+
+def _promote_header_row(d, must_contain="통화", max_scan=15):
+    """헤더가 첫 행이 아닐 때 — 키워드가 있는 행을 찾아 헤더로 승격."""
+    for i in range(min(max_scan, len(d))):
+        row_vals = [str(v).strip() for v in d.iloc[i].tolist()]
+        if any(must_contain == v or must_contain in v for v in row_vals):
+            new_cols = [v if v else f"_col{j}" for j, v in enumerate(row_vals)]
+            d2 = d.iloc[i + 1:].copy()
+            d2.columns = new_cols
+            d2 = d2.reset_index(drop=True)
+            return d2
+    return d
+
+def _parse_cash_template(d):
+    """외화보유데이터 템플릿: (A) 보유현금 섹션의 통화/금액/평균환율만 추출."""
+    rows = []
+    in_section = False
+    for _, row in d.iterrows():
+        cells = [str(c).strip() for c in row.tolist()]
+        first = cells[0] if cells else ""
+        if "(A)" in first or first == "보유현금":
+            in_section = True
+        elif "(B)" in first or "(C)" in first or "미결" in first or "노출" in first:
+            in_section = False
+            continue
+        if not in_section:
+            continue
+        # 3자 영문 통화 코드 찾기 (USD/CNY/HKD/TWD/EUR 등)
+        cur_idx = None
+        for idx, val in enumerate(cells):
+            v = val.strip()
+            if len(v) == 3 and v.isalpha() and v.isupper():
+                cur_idx = idx
+                break
+        if cur_idx is None:
+            continue
+        try:
+            amt = _to_float(cells[cur_idx + 1])
+            book = _to_float(cells[cur_idx + 2])
+        except IndexError:
+            continue
+        if amt > 0:
+            rows.append({"통화": cells[cur_idx], "금액": amt, "보유환율": book})
+    if rows:
+        return pd.DataFrame(rows)
+    return pd.DataFrame({"통화": [], "금액": [], "보유환율": []})
+
 def _load_fx_data(uploaded, default_data, has_rate=False):
-    if uploaded:
-        d = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
-        # 동일 이름 중복 컬럼 제거 (첫 번째만 유지)
+    if not uploaded:
+        return default_data
+    d = _read_with_encoding(uploaded)
+    # 동일 이름 중복 컬럼 제거
+    d = d.loc[:, ~d.columns.duplicated()]
+    # 통화 컬럼 표준화 → "통화"
+    cur_col = _detect_col(d, CURRENCY_COL_CANDIDATES)
+    if not cur_col:
+        # 헤더가 첫 행이 아닐 가능성 — 스캔
+        d = _promote_header_row(d, must_contain="통화")
         d = d.loc[:, ~d.columns.duplicated()]
-        # 통화 컬럼 표준화 → "통화"
         cur_col = _detect_col(d, CURRENCY_COL_CANDIDATES)
-        if cur_col and cur_col != "통화":
-            if "통화" in d.columns:
-                d = d.drop(columns=["통화"])
-            d = d.rename(columns={cur_col: "통화"})
-        if "통화" not in d.columns:
-            st.error(f"업로드 파일에 통화 컬럼이 없습니다 (지원 컬럼명: {', '.join(CURRENCY_COL_CANDIDATES)})")
-            return default_data
-        # 외화금액 컬럼 표준화 → "금액" (기존 "금액"이 있으면 우선 제거 후 rename)
-        fc = _detect_col(d, FC_COL_CANDIDATES)
-        if fc and fc != "금액":
-            if "금액" in d.columns:
-                d = d.drop(columns=["금액"])
-            d = d.rename(columns={fc: "금액"})
+    if not cur_col:
+        # 보유현금 템플릿 형식 가능성 (헤더 + 섹션 구조)
+        if has_rate:
+            parsed = _parse_cash_template(d)
+            if not parsed.empty:
+                return parsed
+        st.error(f"'{uploaded.name}' 파일에서 통화 컬럼을 찾을 수 없습니다.")
+        return default_data
+    if cur_col != "통화":
+        if "통화" in d.columns:
+            d = d.drop(columns=["통화"])
+        d = d.rename(columns={cur_col: "통화"})
+    # 외화/KRW 컬럼 정리: 두 컬럼이 공존하는 SAP 패턴 명시 처리
+    if "외화금액" in d.columns and "금액" in d.columns and "원화금액" not in d.columns:
+        d = d.rename(columns={"금액": "원화금액"})
+    if "금액(전표 통화)" in d.columns and "금액(현지 통화)" in d.columns and "원화금액" not in d.columns:
+        d = d.rename(columns={"금액(현지 통화)": "원화금액"})
+    # FC 컬럼 → "금액"으로 표준화
+    fc = _detect_col(d, FC_COL_CANDIDATES)
+    if fc and fc != "금액":
         if "금액" in d.columns:
-            col = d["금액"]
-            if isinstance(col, pd.DataFrame):
-                col = col.iloc[:, 0]
-            d["금액"] = [_to_float(x) for x in col.tolist()]
-        if has_rate and "보유환율" in d.columns:
-            col = d["보유환율"]
-            if isinstance(col, pd.DataFrame):
-                col = col.iloc[:, 0]
-            d["보유환율"] = [_to_float(x) for x in col.tolist()]
-        krw_col = _detect_col(d, KRW_COL_CANDIDATES)
-        if krw_col:
-            col = d[krw_col]
-            if isinstance(col, pd.DataFrame):
-                col = col.iloc[:, 0]
-            d[krw_col] = [_to_float(x) for x in col.tolist()]
-        # 통화/금액 빈 행 제거
-        d["통화"] = d["통화"].astype(str).str.strip()
-        d = d[d["통화"].str.len() > 0]
-        d = d[d["통화"].str.lower() != "nan"]
-        return d
-    return default_data
+            d = d.drop(columns=["금액"])
+        d = d.rename(columns={fc: "금액"})
+    # 보유환율 컬럼 표준화 (보유 평균환율 등)
+    rate_col = _detect_col(d, RATE_COL_CANDIDATES)
+    if has_rate and rate_col and rate_col != "보유환율":
+        d = d.rename(columns={rate_col: "보유환율"})
+    # 숫자 변환
+    if "금액" in d.columns:
+        col = d["금액"]
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        d["금액"] = [_to_float(x) for x in col.tolist()]
+    if has_rate and "보유환율" in d.columns:
+        col = d["보유환율"]
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        d["보유환율"] = [_to_float(x) for x in col.tolist()]
+    krw_col = _detect_col(d, KRW_COL_CANDIDATES)
+    if krw_col:
+        col = d[krw_col]
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        d[krw_col] = [_to_float(x) for x in col.tolist()]
+    # 통화 빈 행 제거 + 합계행(첫 컬럼이 비어있는 행) 제거
+    d["통화"] = d["통화"].astype(str).str.strip()
+    d = d[d["통화"].str.len() > 0]
+    d = d[~d["통화"].str.lower().isin(["nan", "none"])]
+    # 통화 코드는 영문 2~5자만 (합계행에 들어간 잡 텍스트 차단)
+    d = d[d["통화"].str.match(r"^[A-Z]{2,5}$", na=False)]
+    # 첫 컬럼이 빈 합계행 추가 차단 (통화 외에 다른 식별 컬럼 비어있으면 제외)
+    if len(d.columns) >= 2:
+        first_col = d.columns[0]
+        if first_col != "통화":
+            mask = d[first_col].astype(str).str.strip() != ""
+            mask = mask & (~d[first_col].astype(str).str.lower().isin(["nan", "none"]))
+            d = d[mask]
+    return d.reset_index(drop=True)
 
 cash_df = _load_fx_data(uploaded_cash, pd.DataFrame({
     "통화": ["USD", "CNY"], "금액": [5000000.0, 30000000.0], "보유환율": [1450.00, 198.50],
@@ -1337,16 +1428,21 @@ for cur in all_currencies:
         except Exception:
             cash_book = 0.0
 
-    # (B) 미결채권 — 외화 합계 + 원화 합계 → 가중평균 환율
+    # (B) 미결채권 — 외화 합계 + 원화 합계 → 가중평균 환율 (음수 값도 그대로 합산 후 절대값으로 정규화)
     arb = ar_df[ar_df["통화"].astype(str) == cur]
-    ar_amt = float(arb["금액"].sum()) if not arb.empty else 0.0
-    ar_book_krw = float(arb[ar_krw_col].sum()) if (ar_krw_col and not arb.empty) else 0.0
+    ar_raw = float(arb["금액"].sum()) if not arb.empty else 0.0
+    ar_krw_raw = float(arb[ar_krw_col].sum()) if (ar_krw_col and not arb.empty) else 0.0
+    # 채권은 자산 → 부호 그대로 (음수면 환불/반품). 표시용은 절대값
+    ar_amt = abs(ar_raw)
+    ar_book_krw = abs(ar_krw_raw)
     ar_book = (ar_book_krw / ar_amt) if ar_amt else 0.0
 
-    # (C) 미결채무 — 동일 로직
+    # (C) 미결채무 — 데이터 자체가 음수일 수 있음 → abs로 정규화
     apb = ap_df[ap_df["통화"].astype(str) == cur]
-    ap_amt = float(apb["금액"].sum()) if not apb.empty else 0.0
-    ap_book_krw = float(apb[ap_krw_col].sum()) if (ap_krw_col and not apb.empty) else 0.0
+    ap_raw = float(apb["금액"].sum()) if not apb.empty else 0.0
+    ap_krw_raw = float(apb[ap_krw_col].sum()) if (ap_krw_col and not apb.empty) else 0.0
+    ap_amt = abs(ap_raw)
+    ap_book_krw = abs(ap_krw_raw)
     ap_book = (ap_book_krw / ap_amt) if ap_amt else 0.0
 
     mkt_v = float(rate_map.get(cur, 0))

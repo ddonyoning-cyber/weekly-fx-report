@@ -123,15 +123,27 @@ def fetch_exchange_rates() -> pd.DataFrame:
     rows["TIME"] = pd.to_datetime(rows["TIME"])
     rows["DATA_VALUE"] = pd.to_numeric(rows["DATA_VALUE"], errors="coerce")
 
-    usd = (
-        rows[rows["ITEM_CODE1"] == "0000001"]
-        .drop_duplicates("TIME").set_index("TIME")["DATA_VALUE"].rename("USD_KRW")
-    )
-    cny = (
-        rows[rows["ITEM_NAME1"].str.contains("위안", na=False)]
-        .drop_duplicates("TIME").set_index("TIME")["DATA_VALUE"].rename("CNY_KRW")
-    )
-    df = pd.concat([usd, cny], axis=1).ffill().dropna()
+    # ITEM_NAME1 키워드로 통화별 시리즈 추출 (한국은행 환율 731Y001)
+    # (col_name, name_keyword, divisor) — 일본엔은 100엔 단위로 와서 1엔으로 환산
+    series_def = [
+        ("USD_KRW", "미국달러", 1),
+        ("CNY_KRW", "위안", 1),
+        ("EUR_KRW", "유로", 1),
+        ("HKD_KRW", "홍콩달러", 1),
+        ("TWD_KRW", "대만", 1),
+        ("JPY_KRW", "일본", 100),
+    ]
+    parts = []
+    for col_name, kw, divisor in series_def:
+        sub = rows[rows["ITEM_NAME1"].str.contains(kw, na=False)]
+        if sub.empty:
+            continue
+        s = sub.drop_duplicates("TIME").set_index("TIME")["DATA_VALUE"].rename(col_name)
+        if divisor != 1:
+            s = s / divisor
+        parts.append(s)
+
+    df = pd.concat(parts, axis=1).ffill().dropna(subset=["USD_KRW", "CNY_KRW"])
     df["USD_CNY"] = df["USD_KRW"] / df["CNY_KRW"]
     return df
 
@@ -1202,6 +1214,18 @@ def _load_fx_data(uploaded, default_data, has_rate=False):
     d = _read_with_encoding(uploaded)
     # 동일 이름 중복 컬럼 제거
     d = d.loc[:, ~d.columns.duplicated()]
+
+    # 보유현금 파일이면 (A) 섹션 마커 먼저 검사 → 발견 시 template parser 우선
+    if has_rate:
+        try:
+            joined = d.astype(str).agg(" ".join, axis=1).str.cat(sep=" ")
+            if "(A)" in joined or "보유현금" in joined:
+                parsed = _parse_cash_template(d)
+                if not parsed.empty:
+                    return parsed
+        except Exception:
+            pass
+
     # 통화 컬럼 표준화 → "통화"
     cur_col = _detect_col(d, CURRENCY_COL_CANDIDATES)
     if not cur_col:
@@ -1288,6 +1312,10 @@ st.markdown(f'<div class="section-header">1. 주간 외환 관리 가이드라�
 
 # ── 순 노출액 계산 ──
 rate_map = {"USD": float(latest["USD_KRW"]), "CNY": float(latest["CNY_KRW"])}
+for _cur in ["EUR", "HKD", "TWD", "JPY"]:
+    _col = f"{_cur}_KRW"
+    if _col in latest.index and pd.notna(latest[_col]):
+        rate_map[_cur] = float(latest[_col])
 net_exposure = {}
 cash_data = {}
 for _, row in cash_df.iterrows():
@@ -1489,15 +1517,19 @@ def _fu_rate(v):
     if abs(v - round(v)) < 1e-6:
         return f"{int(round(v)):,}"
     return f"{v:,.2f}"
-def _fu_krw_mil(v):
+def _fu_krw_won(v):
     if not v: return "-"
-    return f"{v / 1_000_000:,.0f}"
-def _fu_pnl_mil(v):
+    return f"{v:,.0f}"
+def _fu_pnl_won(v):
     if not v: return "-"
-    val = abs(v) / 1_000_000
+    val = abs(v)
     if v > 0:
         return f'<span style="color:#C00000;font-weight:700;">▲ {val:,.0f}</span>'
     return f'<span style="color:#4A90D9;font-weight:700;">▼ {val:,.0f}</span>'
+# 호환용 별칭 (Claude 페이로드는 백만 단위 유지)
+def _fu_krw_mil(v):
+    if not v: return "-"
+    return f"{v / 1_000_000:,.0f}"
 
 # 통합 표 빌드 ───────────────────────────────
 def _build_unified_table_html():
@@ -1525,10 +1557,10 @@ def _build_unified_table_html():
                 f'<td style="text-align:center;font-weight:600;padding:9px 12px;border:1px solid #eee;">{cur}</td>'
                 f'<td style="text-align:right;{amt_color}padding:9px 12px;border:1px solid #eee;">{_fu_amt(amt)}</td>'
                 f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_rate(book_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_mil(book_krw_x)}</td>'
+                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_won(book_krw_x)}</td>'
                 f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_rate(mkt_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_mil(mkt_krw_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_pnl_mil(pnl_x)}</td>'
+                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_won(mkt_krw_x)}</td>'
+                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_pnl_won(pnl_x)}</td>'
                 f'</tr>'
             )
 
@@ -1552,14 +1584,13 @@ def _build_unified_table_html():
         f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
         f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준 외환차손익<br>'
-        f'<span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th>'
+        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준<br>외환차손익</th>'
         f'</tr>'
         f'<tr style="background:#f0f4ff;text-align:center;">'
         f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br><span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
         f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액<br><span style="font-weight:400;font-size:0.72rem;color:#666;">(백만원)</span></th>'
+        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
         f'</tr>'
         f'{rows_html}'
         f'</table>'

@@ -1491,6 +1491,8 @@ for cur in all_currencies:
     net_book_krw = cash_book_krw + ar_book_krw - ap_book_krw
     net_mkt_krw = net_amt * mkt_v if mkt_v else 0
     net_pnl = net_mkt_krw - net_book_krw if mkt_v else 0
+    # 순노출 보유평균환율 = 장부원화환산금액 / 외화금액 (가중평균)
+    net_book_rate = (net_book_krw / net_amt) if abs(net_amt) > 0.0001 else 0
 
     per_cur[cur] = dict(
         # 현금
@@ -1505,7 +1507,8 @@ for cur in all_currencies:
         # 시장 환율
         mkt=mkt_v,
         # 순노출
-        net_amt=net_amt, net_book_krw=net_book_krw, net_mkt_krw=net_mkt_krw, net_pnl=net_pnl,
+        net_amt=net_amt, net_book_rate=net_book_rate, net_book_krw=net_book_krw,
+        net_mkt_krw=net_mkt_krw, net_pnl=net_pnl,
     )
 
 # 포맷터 ──────────────────────────────────────
@@ -1532,11 +1535,18 @@ def _fu_krw_mil(v):
     return f"{v / 1_000_000:,.0f}"
 
 # 통합 표 빌드 ───────────────────────────────
-def _build_unified_table_html():
+def _build_unified_table_html(cash_curs=None, ar_curs=None, ap_curs=None, net_curs=None):
+    cash_curs = cash_curs if cash_curs is not None else SECTION_CASH_CURS
+    ar_curs = ar_curs if ar_curs is not None else SECTION_AR_CURS
+    ap_curs = ap_curs if ap_curs is not None else SECTION_AP_CURS
+    net_curs = net_curs if net_curs is not None else SECTION_NET_CURS
+
     rows_html = ""
 
     def _add_section(label, currencies, getter, is_negative=False, highlight=False, big_label=False):
         nonlocal rows_html
+        if not currencies:
+            return  # 필터로 빈 섹션이면 스킵
         rs = len(currencies)
         section_bg = "#dcdcdc" if highlight else "#f8f9fc"
         label_size = "1.0rem" if big_label else "0.95rem"
@@ -1564,16 +1574,16 @@ def _build_unified_table_html():
                 f'</tr>'
             )
 
-    _add_section("(A) 보유현금", SECTION_CASH_CURS,
+    _add_section("(A) 보유현금", cash_curs,
                  lambda d: (d["cash"], d["cash_book"], d["cash_book_krw"], d["mkt"], d["cash_mkt_krw"], d["cash_pnl"]))
-    _add_section("(B) 미결채권", SECTION_AR_CURS,
+    _add_section("(B) 미결채권", ar_curs,
                  lambda d: (d["ar"], d["ar_book"], d["ar_book_krw"], d["mkt"], d["ar_mkt_krw"], d["ar_pnl"]))
-    _add_section("(C) 미결채무", SECTION_AP_CURS,
+    _add_section("(C) 미결채무", ap_curs,
                  lambda d: (-d["ap"], d["ap_book"], -d["ap_book_krw"], d["mkt"], -d["ap_mkt_krw"], d["ap_pnl"]),
                  is_negative=True)
     _add_section('순 노출금액<br><span style="font-weight:400;font-size:0.78rem;">(A)+(B)-(C)</span>',
-                 SECTION_NET_CURS,
-                 lambda d: (d["net_amt"], 0, d["net_book_krw"], d["mkt"], d["net_mkt_krw"], d["net_pnl"]),
+                 net_curs,
+                 lambda d: (d["net_amt"], d["net_book_rate"], d["net_book_krw"], d["mkt"], d["net_mkt_krw"], d["net_pnl"]),
                  is_negative=True, highlight=True, big_label=True)
 
     return (
@@ -1597,7 +1607,49 @@ def _build_unified_table_html():
         f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">기준일: {latest_date} &nbsp;·&nbsp; 채권: 전기일 기준 &nbsp;·&nbsp; 채무: 만기일 기준 &nbsp;·&nbsp; 환율 미수집 통화는 "-" 표기</div>'
     )
 
-st.markdown(_build_unified_table_html(), unsafe_allow_html=True)
+# === 통화 필터 + 통합 표 + 합계 외환차손익 (fragment로 격리) ===
+@st.fragment
+def _render_table_with_filter():
+    available = sorted(set(SECTION_CASH_CURS + SECTION_AR_CURS + SECTION_AP_CURS + SECTION_NET_CURS))
+    selected = st.multiselect(
+        "📊 표시할 통화 선택",
+        options=available,
+        default=available,
+        key="cur_filter",
+        help="원하는 통화만 선택하면 표·합계 외환차손익이 해당 통화 기준으로 다시 계산됩니다.",
+    )
+    if not selected:
+        st.info("표시할 통화를 선택해주세요.")
+        return
+
+    cash_f = [c for c in SECTION_CASH_CURS if c in selected]
+    ar_f = [c for c in SECTION_AR_CURS if c in selected]
+    ap_f = [c for c in SECTION_AP_CURS if c in selected]
+    net_f = [c for c in SECTION_NET_CURS if c in selected]
+    st.markdown(_build_unified_table_html(cash_f, ar_f, ap_f, net_f), unsafe_allow_html=True)
+
+    # 현재기준 최종 외환차손익 합계 (선택 통화 기준)
+    total_pnl_won = sum(per_cur[c]["net_pnl"] for c in net_f if c in per_cur)
+    if total_pnl_won > 0:
+        color, arrow, status = "#C00000", "▲", "이익"
+    elif total_pnl_won < 0:
+        color, arrow, status = "#4A90D9", "▼", "손실"
+    else:
+        color, arrow, status = "#666", "—", "보합"
+    scope = "전체" if len(selected) == len(available) else " · ".join(selected)
+    st.markdown(
+        f'<div style="margin:14px 0 4px 0;padding:14px 20px;background:#f5f9ff;'
+        f'border:1px solid #c5d3e8;border-radius:8px;font-size:0.95rem;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
+        f'<span style="color:#444;">💰 <b>현재기준 최종 외환차손익</b> '
+        f'<span style="font-size:0.82rem;color:#888;">(선택: {scope})</span></span>'
+        f'<span style="color:{color};font-weight:700;font-size:1.3rem;">'
+        f'{arrow} {abs(total_pnl_won):,.0f} 원 <span style="font-size:0.85rem;font-weight:600;">({status})</span>'
+        f'</span></div></div>',
+        unsafe_allow_html=True,
+    )
+
+_render_table_with_filter()
 
 
 # === 통합 의사결정 분석 (Claude AI · 전사 포트폴리오) ===

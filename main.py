@@ -1117,6 +1117,7 @@ with st.sidebar:
 # KRW 환산 컬럼 후보 (가중평균 환율 산출용)
 KRW_COL_CANDIDATES = ["원화금액", "금액(KRW)", "금액(원화)", "금액(현지 통화)", "KRW", "원화"]
 FC_COL_CANDIDATES = ["외화금액", "금액(전표 통화)", "금액"]
+CURRENCY_COL_CANDIDATES = ["통화", "Currency", "currency", "통화코드", "통화 코드", "CUR", "Cur"]
 
 def _detect_col(df, candidates):
     for c in candidates:
@@ -1138,6 +1139,15 @@ def _load_fx_data(uploaded, default_data, has_rate=False):
         d = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
         # 동일 이름 중복 컬럼 제거 (첫 번째만 유지)
         d = d.loc[:, ~d.columns.duplicated()]
+        # 통화 컬럼 표준화 → "통화"
+        cur_col = _detect_col(d, CURRENCY_COL_CANDIDATES)
+        if cur_col and cur_col != "통화":
+            if "통화" in d.columns:
+                d = d.drop(columns=["통화"])
+            d = d.rename(columns={cur_col: "통화"})
+        if "통화" not in d.columns:
+            st.error(f"업로드 파일에 통화 컬럼이 없습니다 (지원 컬럼명: {', '.join(CURRENCY_COL_CANDIDATES)})")
+            return default_data
         # 외화금액 컬럼 표준화 → "금액" (기존 "금액"이 있으면 우선 제거 후 rename)
         fc = _detect_col(d, FC_COL_CANDIDATES)
         if fc and fc != "금액":
@@ -1160,6 +1170,10 @@ def _load_fx_data(uploaded, default_data, has_rate=False):
             if isinstance(col, pd.DataFrame):
                 col = col.iloc[:, 0]
             d[krw_col] = [_to_float(x) for x in col.tolist()]
+        # 통화/금액 빈 행 제거
+        d["통화"] = d["통화"].astype(str).str.strip()
+        d = d[d["통화"].str.len() > 0]
+        d = d[d["통화"].str.lower() != "nan"]
         return d
     return default_data
 
@@ -1186,17 +1200,29 @@ rate_map = {"USD": float(latest["USD_KRW"]), "CNY": float(latest["CNY_KRW"])}
 net_exposure = {}
 cash_data = {}
 for _, row in cash_df.iterrows():
-    cur = str(row["통화"])
-    cash_data[cur] = {"금액": float(row["금액"]), "보유환율": float(row.get("보유환율", 0))}
-    net_exposure[cur] = float(row["금액"])
+    if "통화" not in row or pd.isna(row.get("통화")):
+        continue
+    cur = str(row["통화"]).strip()
+    if not cur or cur.lower() == "nan":
+        continue
+    cash_data[cur] = {"금액": float(row.get("금액", 0) or 0), "보유환율": float(row.get("보유환율", 0) or 0)}
+    net_exposure[cur] = float(row.get("금액", 0) or 0)
 
 for _, row in ar_df.iterrows():
-    cur = str(row["통화"])
-    net_exposure[cur] = net_exposure.get(cur, 0) + float(row["금액"])
+    if "통화" not in row or pd.isna(row.get("통화")):
+        continue
+    cur = str(row["통화"]).strip()
+    if not cur or cur.lower() == "nan":
+        continue
+    net_exposure[cur] = net_exposure.get(cur, 0) + float(row.get("금액", 0) or 0)
 
 for _, row in ap_df.iterrows():
-    cur = str(row["통화"])
-    net_exposure[cur] = net_exposure.get(cur, 0) - float(row["금액"])
+    if "통화" not in row or pd.isna(row.get("통화")):
+        continue
+    cur = str(row["통화"]).strip()
+    if not cur or cur.lower() == "nan":
+        continue
+    net_exposure[cur] = net_exposure.get(cur, 0) - float(row.get("금액", 0) or 0)
 
 # ── 데이터 요약 텍스트 생성 (Claude에 전달) ──
 cny_cash = cash_data.get("CNY", {}).get("금액", 0)

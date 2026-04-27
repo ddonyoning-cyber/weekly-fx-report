@@ -1124,21 +1124,42 @@ def _detect_col(df, candidates):
             return c
     return None
 
+def _to_float(x):
+    s = str(x).replace(",", "").strip()
+    if s in ("", "nan", "NaN", "None", "-"):
+        return 0.0
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+
 def _load_fx_data(uploaded, default_data, has_rate=False):
     if uploaded:
         d = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
-        # 외화금액 컬럼 표준화 → "금액"
+        # 동일 이름 중복 컬럼 제거 (첫 번째만 유지)
+        d = d.loc[:, ~d.columns.duplicated()]
+        # 외화금액 컬럼 표준화 → "금액" (기존 "금액"이 있으면 우선 제거 후 rename)
         fc = _detect_col(d, FC_COL_CANDIDATES)
         if fc and fc != "금액":
+            if "금액" in d.columns:
+                d = d.drop(columns=["금액"])
             d = d.rename(columns={fc: "금액"})
         if "금액" in d.columns:
-            d["금액"] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d["금액"].tolist()]
+            col = d["금액"]
+            if isinstance(col, pd.DataFrame):
+                col = col.iloc[:, 0]
+            d["금액"] = [_to_float(x) for x in col.tolist()]
         if has_rate and "보유환율" in d.columns:
-            d["보유환율"] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d["보유환율"].tolist()]
-        # KRW 환산 컬럼도 float 변환 (있으면)
+            col = d["보유환율"]
+            if isinstance(col, pd.DataFrame):
+                col = col.iloc[:, 0]
+            d["보유환율"] = [_to_float(x) for x in col.tolist()]
         krw_col = _detect_col(d, KRW_COL_CANDIDATES)
         if krw_col:
-            d[krw_col] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d[krw_col].tolist()]
+            col = d[krw_col]
+            if isinstance(col, pd.DataFrame):
+                col = col.iloc[:, 0]
+            d[krw_col] = [_to_float(x) for x in col.tolist()]
         return d
     return default_data
 

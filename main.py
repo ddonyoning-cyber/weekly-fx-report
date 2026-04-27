@@ -1110,16 +1110,35 @@ def _forecast_card(label, band_str, direction, sub=""):
 with st.sidebar:
     st.subheader("외화 데이터 업로드")
     uploaded_cash = st.file_uploader("보유 현금 (Excel/CSV)", type=["xlsx", "csv"], key="cash")
-    uploaded_ar = st.file_uploader("이번 주 채권 AR (Excel/CSV)", type=["xlsx", "csv"], key="ar")
-    uploaded_ap = st.file_uploader("이번 주 채무 AP (Excel/CSV)", type=["xlsx", "csv"], key="ap")
-    st.caption("컬럼: 통화, 금액, 보유환율(현금만)")
+    uploaded_ar = st.file_uploader("미결채권 AR (Excel/CSV)", type=["xlsx", "csv"], key="ar")
+    uploaded_ap = st.file_uploader("미결채무 AP (Excel/CSV)", type=["xlsx", "csv"], key="ap")
+    st.caption("• 현금: 통화, 금액, 보유환율\n• 채권: 통화, 외화금액(또는 금액), 원화금액(또는 금액(KRW))\n• 채무: 통화, 금액(전표 통화), 금액(현지 통화)")
+
+# KRW 환산 컬럼 후보 (가중평균 환율 산출용)
+KRW_COL_CANDIDATES = ["원화금액", "금액(KRW)", "금액(원화)", "금액(현지 통화)", "KRW", "원화"]
+FC_COL_CANDIDATES = ["외화금액", "금액(전표 통화)", "금액"]
+
+def _detect_col(df, candidates):
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
 
 def _load_fx_data(uploaded, default_data, has_rate=False):
     if uploaded:
         d = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
-        d["금액"] = [float(str(x).replace(",", "")) for x in d["금액"].tolist()]
+        # 외화금액 컬럼 표준화 → "금액"
+        fc = _detect_col(d, FC_COL_CANDIDATES)
+        if fc and fc != "금액":
+            d = d.rename(columns={fc: "금액"})
+        if "금액" in d.columns:
+            d["금액"] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d["금액"].tolist()]
         if has_rate and "보유환율" in d.columns:
-            d["보유환율"] = [float(str(x).replace(",", "")) for x in d["보유환율"].tolist()]
+            d["보유환율"] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d["보유환율"].tolist()]
+        # KRW 환산 컬럼도 float 변환 (있으면)
+        krw_col = _detect_col(d, KRW_COL_CANDIDATES)
+        if krw_col:
+            d[krw_col] = [float(str(x).replace(",", "")) if str(x).strip() not in ("", "nan", "-") else 0.0 for x in d[krw_col].tolist()]
         return d
     return default_data
 
@@ -1128,11 +1147,11 @@ cash_df = _load_fx_data(uploaded_cash, pd.DataFrame({
 }), has_rate=True)
 
 ar_df = _load_fx_data(uploaded_ar, pd.DataFrame({
-    "통화": ["USD", "CNY"], "금액": [0.0, 0.0],
+    "통화": ["USD", "CNY", "HKD", "TWD", "EUR"], "금액": [0.0, 0.0, 0.0, 0.0, 0.0], "원화금액": [0.0, 0.0, 0.0, 0.0, 0.0],
 }))
 
 ap_df = _load_fx_data(uploaded_ap, pd.DataFrame({
-    "통화": ["USD", "CNY"], "금액": [0.0, 0.0],
+    "통화": ["USD"], "금액": [0.0], "원화금액": [0.0],
 }))
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1230,34 +1249,92 @@ if "구분" in ar_df.columns:
 # ── UI 렌더링 ──
 
 # === 통합 포지션 표 (전 통화 자동 집계) ===
-all_currencies = sorted(set(
+
+# 표에 항상 표시할 통화 (사용자 양식 기준 — CSV에 없어도 -로 표시)
+SECTION_CASH_CURS = ["USD", "CNY"]
+SECTION_AR_CURS = ["USD", "CNY", "HKD", "TWD", "EUR"]
+SECTION_AP_CURS = ["USD"]
+SECTION_NET_CURS = ["USD", "CNY", "HKD", "TWD", "EUR"]
+
+# 데이터에 있는 통화도 자동 추가 (양식 외 통화 누락 방지)
+_data_currencies = sorted(set(
     [str(c) for c in cash_df["통화"].tolist()] +
     [str(c) for c in ar_df["통화"].tolist()] +
     [str(c) for c in ap_df["통화"].tolist()]
 ))
+for c in _data_currencies:
+    if c not in SECTION_CASH_CURS and c in cash_df["통화"].astype(str).values:
+        SECTION_CASH_CURS.append(c)
+    if c not in SECTION_AR_CURS and c in ar_df["통화"].astype(str).values:
+        SECTION_AR_CURS.append(c)
+    if c not in SECTION_AP_CURS and c in ap_df["통화"].astype(str).values:
+        SECTION_AP_CURS.append(c)
+    if c not in SECTION_NET_CURS:
+        SECTION_NET_CURS.append(c)
+
+all_currencies = sorted(set(SECTION_CASH_CURS + SECTION_AR_CURS + SECTION_AP_CURS + SECTION_NET_CURS))
+
+# CSV의 KRW 환산 컬럼 자동 감지 (가중평균 환율 산출용)
+ar_krw_col = _detect_col(ar_df, KRW_COL_CANDIDATES)
+ap_krw_col = _detect_col(ap_df, KRW_COL_CANDIDATES)
 
 per_cur = {}
 for cur in all_currencies:
+    # (A) 보유현금 — 평균환율은 엑셀의 "보유환율" 컬럼 그대로
     cb = cash_df[cash_df["통화"].astype(str) == cur]
     cash_v = float(cb["금액"].sum()) if not cb.empty else 0.0
-    book_v = 0.0
+    cash_book = 0.0
     if not cb.empty and "보유환율" in cb.columns:
         try:
-            book_v = float(cb["보유환율"].iloc[0])
+            cash_book = float(cb["보유환율"].iloc[0])
         except Exception:
-            book_v = 0.0
-    ar_sum = float(ar_df[ar_df["통화"].astype(str) == cur]["금액"].sum()) if cur in ar_df["통화"].astype(str).values else 0.0
-    ap_sum = float(ap_df[ap_df["통화"].astype(str) == cur]["금액"].sum()) if cur in ap_df["통화"].astype(str).values else 0.0
+            cash_book = 0.0
+
+    # (B) 미결채권 — 외화 합계 + 원화 합계 → 가중평균 환율
+    arb = ar_df[ar_df["통화"].astype(str) == cur]
+    ar_amt = float(arb["금액"].sum()) if not arb.empty else 0.0
+    ar_book_krw = float(arb[ar_krw_col].sum()) if (ar_krw_col and not arb.empty) else 0.0
+    ar_book = (ar_book_krw / ar_amt) if ar_amt else 0.0
+
+    # (C) 미결채무 — 동일 로직
+    apb = ap_df[ap_df["통화"].astype(str) == cur]
+    ap_amt = float(apb["금액"].sum()) if not apb.empty else 0.0
+    ap_book_krw = float(apb[ap_krw_col].sum()) if (ap_krw_col and not apb.empty) else 0.0
+    ap_book = (ap_book_krw / ap_amt) if ap_amt else 0.0
+
     mkt_v = float(rate_map.get(cur, 0))
-    net_v = cash_v + ar_sum - ap_sum
+
+    # KRW 환산
+    cash_book_krw = cash_v * cash_book if cash_book else 0
+    cash_mkt_krw = cash_v * mkt_v if mkt_v else 0
+    ar_mkt_krw = ar_amt * mkt_v if mkt_v else 0
+    ap_mkt_krw = ap_amt * mkt_v if mkt_v else 0
+
+    # 외환차손익 (현재기준 vs 장부기준)
+    cash_pnl = cash_mkt_krw - cash_book_krw if (cash_book and mkt_v) else 0
+    ar_pnl = ar_mkt_krw - ar_book_krw if (ar_book_krw and mkt_v) else 0
+    ap_pnl = -(ap_mkt_krw - ap_book_krw) if (ap_book_krw and mkt_v) else 0  # 부채 → 환율 상승 시 손실
+
+    # 순노출 (A + B - C)
+    net_amt = cash_v + ar_amt - ap_amt
+    net_book_krw = cash_book_krw + ar_book_krw - ap_book_krw
+    net_mkt_krw = net_amt * mkt_v if mkt_v else 0
+    net_pnl = net_mkt_krw - net_book_krw if mkt_v else 0
+
     per_cur[cur] = dict(
-        cash=cash_v, book=book_v, mkt=mkt_v, ar=ar_sum, ap=ap_sum, net=net_v,
-        cash_book_krw=cash_v * book_v if book_v else 0,
-        cash_mkt_krw=cash_v * mkt_v if mkt_v else 0,
-        ar_mkt_krw=ar_sum * mkt_v if mkt_v else 0,
-        ap_mkt_krw=ap_sum * mkt_v if mkt_v else 0,
-        net_mkt_krw=net_v * mkt_v if mkt_v else 0,
-        cash_pnl=(mkt_v - book_v) * cash_v if (book_v and mkt_v) else 0,
+        # 현금
+        cash=cash_v, cash_book=cash_book, cash_book_krw=cash_book_krw,
+        cash_mkt_krw=cash_mkt_krw, cash_pnl=cash_pnl,
+        # 채권
+        ar=ar_amt, ar_book=ar_book, ar_book_krw=ar_book_krw,
+        ar_mkt_krw=ar_mkt_krw, ar_pnl=ar_pnl,
+        # 채무
+        ap=ap_amt, ap_book=ap_book, ap_book_krw=ap_book_krw,
+        ap_mkt_krw=ap_mkt_krw, ap_pnl=ap_pnl,
+        # 시장 환율
+        mkt=mkt_v,
+        # 순노출
+        net_amt=net_amt, net_book_krw=net_book_krw, net_mkt_krw=net_mkt_krw, net_pnl=net_pnl,
     )
 
 # 포맷터 ──────────────────────────────────────
@@ -1281,11 +1358,6 @@ def _fu_pnl_mil(v):
 
 # 통합 표 빌드 ───────────────────────────────
 def _build_unified_table_html():
-    cash_curs = [c for c in all_currencies if per_cur[c]["cash"] > 0] or all_currencies[:1]
-    ar_curs = [c for c in all_currencies if per_cur[c]["ar"] > 0] or all_currencies[:1]
-    ap_curs = [c for c in all_currencies if per_cur[c]["ap"] > 0] or all_currencies[:1]
-    net_curs = [c for c in all_currencies if abs(per_cur[c]["net"]) > 0.01] or all_currencies[:1]
-
     rows_html = ""
 
     def _add_section(label, currencies, getter, is_negative=False, highlight=False, big_label=False):
@@ -1317,16 +1389,16 @@ def _build_unified_table_html():
                 f'</tr>'
             )
 
-    _add_section("(A) 보유현금", cash_curs,
-                 lambda d: (d["cash"], d["book"], d["cash_book_krw"], d["mkt"], d["cash_mkt_krw"], d["cash_pnl"]))
-    _add_section("(B) 미결채권", ar_curs,
-                 lambda d: (d["ar"], 0, 0, d["mkt"], d["ar_mkt_krw"], 0))
-    _add_section("(C) 미결채무", ap_curs,
-                 lambda d: (-d["ap"], 0, 0, d["mkt"], -d["ap_mkt_krw"], 0),
+    _add_section("(A) 보유현금", SECTION_CASH_CURS,
+                 lambda d: (d["cash"], d["cash_book"], d["cash_book_krw"], d["mkt"], d["cash_mkt_krw"], d["cash_pnl"]))
+    _add_section("(B) 미결채권", SECTION_AR_CURS,
+                 lambda d: (d["ar"], d["ar_book"], d["ar_book_krw"], d["mkt"], d["ar_mkt_krw"], d["ar_pnl"]))
+    _add_section("(C) 미결채무", SECTION_AP_CURS,
+                 lambda d: (-d["ap"], d["ap_book"], -d["ap_book_krw"], d["mkt"], -d["ap_mkt_krw"], d["ap_pnl"]),
                  is_negative=True)
     _add_section('순 노출금액<br><span style="font-weight:400;font-size:0.78rem;">(A)+(B)-(C)</span>',
-                 net_curs,
-                 lambda d: (d["net"], 0, 0, d["mkt"], d["net_mkt_krw"], d["cash_pnl"]),
+                 SECTION_NET_CURS,
+                 lambda d: (d["net_amt"], 0, d["net_book_krw"], d["mkt"], d["net_mkt_krw"], d["net_pnl"]),
                  is_negative=True, highlight=True, big_label=True)
 
     return (
@@ -1411,18 +1483,19 @@ for cur in all_currencies:
     if d["cash"] == 0 and d["ar"] == 0 and d["ap"] == 0:
         continue
     rate_str = (
-        f"장부 {d['book']:,.2f}원 / 당일 {d['mkt']:,.2f}원" if (d["book"] and d["mkt"])
+        f"현금 장부 {d['cash_book']:,.2f}원 / 당일 {d['mkt']:,.2f}원" if (d["cash_book"] and d["mkt"])
+        else f"당일 {d['mkt']:,.2f}원" if d["mkt"]
         else "환율 미수집"
     )
     _pf_lines.append(
         f"■ {cur} ({rate_str})\n"
         f"  - 보유 현금: {d['cash']:,.0f} ({d['cash_book_krw']/1_000_000:,.0f}백만원, 평가손익 {d['cash_pnl']/1_000_000:+,.0f}백만원)\n"
-        f"  - 미결 채권: {d['ar']:,.0f} ({d['ar_mkt_krw']/1_000_000:,.0f}백만원)\n"
-        f"  - 미결 채무: {d['ap']:,.0f} ({d['ap_mkt_krw']/1_000_000:,.0f}백만원)\n"
-        f"  - 순 노출: {d['net']:+,.0f} ({d['net_mkt_krw']/1_000_000:+,.0f}백만원)"
+        f"  - 미결 채권: {d['ar']:,.0f} (장부평균 {d['ar_book']:,.2f}원, {d['ar_book_krw']/1_000_000:,.0f}백만원)\n"
+        f"  - 미결 채무: {d['ap']:,.0f} (장부평균 {d['ap_book']:,.2f}원, {d['ap_book_krw']/1_000_000:,.0f}백만원)\n"
+        f"  - 순 노출: {d['net_amt']:+,.0f} (장부 {d['net_book_krw']/1_000_000:+,.0f}백만원 → 당일 {d['net_mkt_krw']/1_000_000:+,.0f}백만원, 외환차손익 {d['net_pnl']/1_000_000:+,.0f}백만원)"
     )
 
-_total_pnl = sum(per_cur[c]["cash_pnl"] for c in all_currencies)
+_total_pnl = sum(per_cur[c]["net_pnl"] for c in all_currencies)
 _total_net_krw = sum(per_cur[c]["net_mkt_krw"] for c in all_currencies)
 
 g_portfolio_payload = (

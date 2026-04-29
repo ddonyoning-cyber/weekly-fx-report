@@ -1795,8 +1795,8 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
     {"통화": "USD", "분류": "...", "내용": "..."}
   ],
   "actions": [
-    {"통화": "CNY", "액션": "매도/보유/관망 중 1개", "시점": "이번주 X요일 또는 환율 X원 도달 시 등 구체적", "비중": "30%/50%/70%/100% 중 1개 또는 -", "환전 대상": "KRW 또는 USD 또는 -", "근거": "한 줄 (60자 이내)"},
-    {"통화": "USD", "액션": "보유/매수/헤지/관망 중 1개", "시점": "...", "비중": "-", "환전 대상": "-", "근거": "..."}
+    {"통화": "CNY", "액션": "매도/보유/관망 중 1개", "시점": "이번주 X요일 또는 환율 X원 도달 시 등 구체적", "비중": "30%/50%/70%/100% 중 1개 또는 -", "환전 대상": "KRW 또는 USD 또는 -"},
+    {"통화": "USD", "액션": "보유/매수/헤지/관망 중 1개", "시점": "...", "비중": "-", "환전 대상": "-"}
   ]
 }
 
@@ -1818,8 +1818,7 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
   - 두 차익 중 **큰 쪽이 환전 대상**
   - 페이로드 [CNY 매도 환전 대상 — 사전 결정] 블록의 결정값을 반드시 그대로 사용
   - 모든 CNY 매도 액션의 '환전 대상' 필드 = 사전 결정값
-  - '근거' 필드에는 매도 시점·비중 선택 이유만 한 줄로 (예: "밴드 상단 도달 + 3개월 평균 +1.3% 차익 구간")
-  - 환전 대상 비교 수식 (KRW 환전 +X원 = USD 환전 +Y원 등) 절대 근거에 쓰지 말 것
+  - '근거' 필드 사용 안 함 (스키마에서 제외)
 
 [USD 액션 — 매도 금지]
 - 보유: 외환차손/보합 구간 → "보유 유지"
@@ -1956,8 +1955,7 @@ _target_compare_block = (
     f"- USD 환전 (Per 1 CNY): 받는 USD = {1/_cross_v if _cross_v else 0:.6f} USD, KRW 환산가치 = {_usd_value_in_krw if _cross_v else 0:.4f}원, 외환차익 = {_usd_value_in_krw - _cny_book_v if _cny_book_v and _cross_v else 0:+.4f}원/CNY\n"
     f"- 결정: 환전 대상 = **{_decided_target}**\n"
     f"- 근거: {_decided_reason}\n"
-    f"- 모든 CNY 매도 액션의 '환전 대상' 필드 = '{_decided_target}'\n"
-    f"- '근거' 필드에 위 두 환전 외환차익 비교 수치 그대로 인용"
+    f"- 모든 CNY 매도 액션의 '환전 대상' 필드 = '{_decided_target}'"
 )
 
 g_portfolio_payload = g_portfolio_payload + _target_compare_block
@@ -2029,12 +2027,6 @@ def _cell_actions(decision, currency):
     for i, a in enumerate(actions, 1):
         num = ["①", "②", "③", "④"][min(i - 1, 3)]
         action = _val(a.get("액션"))
-        reason = _val(a.get("근거"))
-        # 환전 대상 비교 수식 제거 (예: "KRW 환전 +22원/CNY = USD 환전 +22원/CNY")
-        reason = re.sub(r'(?:KRW|USD)\s*환전\s*[+\-]?\s*\d[\d,\.]*\s*원\s*/?\s*CNY[^,\.]*[,]?\s*', '', reason)
-        reason = re.sub(r'외환차익\s*\d+(?:\.\d+)?\s*%\s*확정[^,\.]*', '', reason)
-        reason = re.sub(r'\s+→\s*(?:USD|KRW)\s*유리', '', reason)
-        reason = reason.strip(" ,.·→")
 
         # CNY 매도 액션이면 환전 대상을 사전 계산 결과로 강제 보정
         target_raw = _val(a.get("환전 대상"))
@@ -2084,16 +2076,11 @@ def _cell_actions(decision, currency):
                 + f'</div>'
             )
 
-        reason_html = (
-            f'<div style="margin-top:7px;padding-top:7px;border-top:1px dashed #e5e7eb;'
-            f'color:#555;font-size:0.84rem;line-height:1.55;">💡 {reason}</div>'
-            if reason and reason != "-" else ""
-        )
         cards += (
             f'<div style="background:#fafbff;border:1px solid #e5e7eb;border-radius:6px;'
             f'padding:10px 12px;margin-bottom:7px;">'
             f'<div style="font-weight:700;font-size:0.95rem;color:{accent};margin-bottom:4px;">{num} {action}</div>'
-            f'{meta_rows}{amount_html}{reason_html}'
+            f'{meta_rows}{amount_html}'
             f'</div>'
         )
     return cards

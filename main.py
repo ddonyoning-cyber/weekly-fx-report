@@ -2085,45 +2085,29 @@ def _cell_actions(decision, currency):
                 received = sell_cny / float(cross_rate)
                 converted_str = f"≈ ${received:,.2f} 확보"
 
+        # 메타 row 구성 (시점/비중 + CNY 매도 시 수량/확보 추가, 모두 동일 스타일)
+        meta_items = [
+            ("시점", _val(a.get("시점"))),
+            ("비중", pct_str),
+        ]
+        if currency == "CNY" and "매도" in action and sell_amt_str:
+            meta_items.append(("수량", sell_amt_str))
+            if converted_str:
+                converted_only = converted_str.replace("≈", "").strip()
+                meta_items.append((f"{target} 확보", f"≈ {converted_only}"))
+        else:
+            meta_items.append(("대상", target))
+
         meta_rows = ""
-        # 매도 액션이면 '환전 대상'은 아래 박스에 통합 표시 → 메타 row에서 제외
-        meta_keys = (
-            [("시점", "시점", _val(a.get("시점"))),
-             ("비중", "비중", pct_str)]
-            if (currency == "CNY" and "매도" in action and sell_amt_str)
-            else [("시점", "시점", _val(a.get("시점"))),
-                  ("비중", "비중", pct_str),
-                  ("환전 대상", "대상", target)]
-        )
-        for k, label, val in meta_keys:
+        for label, val in meta_items:
             if val and val != "-":
                 meta_rows += (
                     f'<div style="display:flex;gap:8px;margin-top:2px;font-size:0.84rem;">'
-                    f'<span style="color:#888;min-width:32px;">{label}</span>'
+                    f'<span style="color:#888;min-width:60px;">{label}</span>'
                     f'<span style="color:#222;font-weight:600;">{val}</span>'
                     f'</div>'
                 )
-
-        # 환전 금액 라인 (매도 액션에만, 라벨에 대상 통화 포함)
         amount_html = ""
-        if sell_amt_str:
-            converted_only = converted_str.replace("≈", "").strip() if converted_str else ""
-            converted_row = (
-                f'<div style="display:flex;gap:10px;font-size:0.86rem;margin-top:3px;">'
-                f'<span style="color:#888;min-width:62px;">{target} 확보</span>'
-                f'<span style="color:#1e3a8a;font-weight:700;">≈ {converted_only}</span>'
-                f'</div>'
-            ) if converted_only else ""
-            amount_html = (
-                f'<div style="margin-top:7px;padding:8px 11px;background:#eff6ff;'
-                f'border-left:3px solid #2E75B6;border-radius:4px;">'
-                f'<div style="display:flex;gap:10px;font-size:0.86rem;">'
-                f'<span style="color:#888;min-width:62px;">매도</span>'
-                f'<span style="color:#1e3a8a;font-weight:700;">{sell_amt_str}</span>'
-                f'</div>'
-                f'{converted_row}'
-                f'</div>'
-            )
 
         cards += (
             f'<div style="background:#fafbff;border:1px solid #e5e7eb;border-radius:6px;'

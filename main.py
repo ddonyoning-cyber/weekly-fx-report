@@ -1787,8 +1787,8 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
 [출력 포맷] 정확히 다음 JSON만 출력 (마크다운 코드블록 없이):
 {
   "current": [
-    {"통화": "USD", "포지션 요약": "외환 트레저리 관점의 한 줄 해석 (50자 이내). 보유/채권/채무 숫자 나열 금지 — 위 표에 이미 있음. 외환차손익 강도 + 시장 위치 + 결제 안정성 등을 종합한 평가."},
-    {"통화": "CNY", "포지션 요약": "..."}
+    {"통화": "USD", "주요수치": "외환차익 +XX억원 또는 외환차손 -XX억원 (KRW 단위로 짧게)", "보조정보": "3M 평균 대비 추세 + 한 줄 평가 (40자 이내, 점·중간점 사용)"},
+    {"통화": "CNY", "주요수치": "...", "보조정보": "..."}
   ],
   "risks": [
     {"통화": "CNY", "분류": "환변동/기회비용/유동성/변동성 중 1개", "내용": "한 줄 (60자 이내)"},
@@ -1985,11 +1985,46 @@ def _val(v):
 
 def _cell_position(decision, currency):
     currents = decision.get("current", []) or []
-    pos = next(
-        (_val(c.get("포지션 요약")) for c in currents if isinstance(c, dict) and str(c.get("통화", "")).strip() == currency),
-        "-"
+    item = next(
+        (c for c in currents if isinstance(c, dict) and str(c.get("통화", "")).strip() == currency),
+        None
     )
-    return f'<div style="font-size:0.95rem;line-height:1.6;color:#1f2937;">{pos}</div>'
+    if not item:
+        return '<div style="color:#bbb;">-</div>'
+
+    # 신 스키마 우선 (주요수치 + 보조정보), 구 스키마(포지션 요약) 폴백
+    main = _val(item.get("주요수치"))
+    sub = _val(item.get("보조정보"))
+    if main == "-":
+        # 폴백: 포지션 요약을 첫 콤마로 분리
+        fallback = _val(item.get("포지션 요약"))
+        if fallback != "-" and "," in fallback:
+            parts = fallback.split(",", 1)
+            main = parts[0].strip()
+            sub = parts[1].strip().rstrip(".")
+        else:
+            main = fallback
+            sub = ""
+
+    # 주요수치 색상 (외환차익 → 빨강 / 외환차손 → 파랑)
+    color = "#1f2937"
+    if "외환차익" in main:
+        color = "#C00000"
+        if not main.startswith("▲"):
+            main = "▲ " + main
+    elif "외환차손" in main:
+        color = "#4A90D9"
+        if not main.startswith("▼"):
+            main = "▼ " + main
+
+    sub_html = (
+        f'<div style="font-size:0.85rem;color:#6b7280;line-height:1.5;margin-top:4px;">{sub}</div>'
+        if sub and sub != "-" else ""
+    )
+    return (
+        f'<div style="font-size:1.05rem;font-weight:700;color:{color};line-height:1.5;">{main}</div>'
+        f'{sub_html}'
+    )
 
 
 def _cell_risks(decision, currency):
@@ -2064,16 +2099,25 @@ def _cell_actions(decision, currency):
                     f'</div>'
                 )
 
-        # 환전 금액 라인 (매도 액션에만)
+        # 환전 금액 라인 (매도 액션에만, 라벨-값 2줄 정렬)
         amount_html = ""
         if sell_amt_str:
+            converted_only = converted_str.replace("≈", "").strip() if converted_str else ""
+            converted_row = (
+                f'<div style="display:flex;gap:10px;font-size:0.86rem;margin-top:3px;">'
+                f'<span style="color:#888;min-width:48px;">확보</span>'
+                f'<span style="color:#1e3a8a;font-weight:700;">≈ {converted_only}</span>'
+                f'</div>'
+            ) if converted_only else ""
             amount_html = (
-                f'<div style="margin-top:6px;padding:6px 10px;background:#eff6ff;'
-                f'border-left:3px solid #2E75B6;border-radius:4px;font-size:0.84rem;">'
-                f'<span style="color:#888;">매도 금액</span> '
-                f'<b style="color:#1e3a8a;">{sell_amt_str}</b>'
-                + (f' <span style="color:#374151;">{converted_str}</span>' if converted_str else "")
-                + f'</div>'
+                f'<div style="margin-top:7px;padding:8px 11px;background:#eff6ff;'
+                f'border-left:3px solid #2E75B6;border-radius:4px;">'
+                f'<div style="display:flex;gap:10px;font-size:0.86rem;">'
+                f'<span style="color:#888;min-width:48px;">매도</span>'
+                f'<span style="color:#1e3a8a;font-weight:700;">{sell_amt_str}</span>'
+                f'</div>'
+                f'{converted_row}'
+                f'</div>'
             )
 
         cards += (

@@ -1692,9 +1692,8 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
 [출력 포맷] 정확히 다음 JSON만 출력 (마크다운 코드블록 없이):
 {
   "current": [
-    {"통화": "USD", "포지션 요약": "보유/채권/채무/순노출 한 줄 (50자 이내)", "외환차손익": "외환차익 +XXX백만 원 또는 외환차손 -XXX백만 원"},
-    {"통화": "CNY", "포지션 요약": "...", "외환차손익": "..."},
-    {"통화": "전사", "포지션 요약": "USD+CNY 통합 한 줄", "외환차손익": "합계 ..."}
+    {"통화": "USD", "포지션 요약": "외환 트레저리 관점의 한 줄 해석 (50자 이내). 보유/채권/채무 숫자 나열 금지 — 위 표에 이미 있음. 외환차손익 강도 + 시장 위치 + 결제 안정성 등을 종합한 평가."},
+    {"통화": "CNY", "포지션 요약": "..."}
   ],
   "risks": [
     {"통화": "CNY", "분류": "환변동/기회비용/유동성/변동성 중 1개", "내용": "한 줄 (60자 이내)"},
@@ -1816,99 +1815,117 @@ with st.spinner("Claude가 USD·CNY 의사결정 분석 중..."):
     g_portfolio_decision = _ai_portfolio_decision(g_portfolio_payload)
 
 
-def _build_unified_decision_table(decision):
-    """현황/리스크/실무제안을 통화별 한 행으로 통합한 단일 표."""
+# === 의사결정 카드 빌더 (통화별 좌우 배치용) ===
+CURRENCY_THEME = {
+    "USD": {"flag": "🇺🇸", "name": "USD", "border": "#2E75B6", "bg": "#f0f4ff", "accent": "#1e5a8a"},
+    "CNY": {"flag": "🇨🇳", "name": "CNY", "border": "#C00000", "bg": "#fdf2f2", "accent": "#8a0000"},
+}
+
+CHIP_PALETTE = {
+    "환변동": ("#fde4cf", "#7a3a00"),
+    "변동성": ("#fde4cf", "#7a3a00"),
+    "기회비용": ("#dbe9ff", "#1e5a8a"),
+    "유동성": ("#fee2e2", "#7a1414"),
+    "결제부담": ("#fee2e2", "#7a1414"),
+    "환차익": ("#dcfce7", "#166534"),
+}
+
+def _val(v):
+    return "-" if v in (None, "", "nan") else str(v)
+
+def _build_decision_card(currency, decision):
+    """통화별 의사결정 카드 HTML (현황/리스크/실무제안 stack)."""
+    theme = CURRENCY_THEME.get(currency, {"flag": "🌐", "name": currency, "border": "#888",
+                                           "bg": "#f4f4f4", "accent": "#555"})
+
+    # 통화별 데이터 추출
     currents = decision.get("current", []) or []
     risks = decision.get("risks", []) or []
     actions = decision.get("actions", []) or []
+    pos_summary = next(
+        (_val(c.get("포지션 요약")) for c in currents if isinstance(c, dict) and str(c.get("통화", "")).strip() == currency),
+        "-"
+    )
+    cur_risks = [r for r in risks if isinstance(r, dict) and str(r.get("통화", "")).strip() == currency]
+    cur_actions = [a for a in actions if isinstance(a, dict) and str(a.get("통화", "")).strip() == currency]
 
-    # 통화별 그룹핑
-    risks_by_cur = {}
-    for r in risks:
-        if not isinstance(r, dict):
-            continue
-        cur = str(r.get("통화", "전사")).strip() or "전사"
-        risks_by_cur.setdefault(cur, []).append(r)
-
-    actions_by_cur = {}
-    for a in actions:
-        if not isinstance(a, dict):
-            continue
-        cur = str(a.get("통화", "전사")).strip() or "전사"
-        actions_by_cur.setdefault(cur, []).append(a)
-
-    def _val(v):
-        s = "-" if v in (None, "", "nan") else str(v)
-        return s
-
-    rows_html = ""
-    for c in currents:
-        if not isinstance(c, dict):
-            continue
-        cur = str(c.get("통화", "")).strip()
-        pos = _val(c.get("포지션 요약"))
-
-        # 리스크 셀 (분류 prefix + 내용)
-        cur_risks = risks_by_cur.get(cur, [])
-        if cur_risks:
-            risk_html = "<br><br>".join(
-                f'<span style="color:#888;font-size:0.82rem;font-weight:600;">[{_val(r.get("분류"))}]</span><br>{_val(r.get("내용"))}'
-                for r in cur_risks
+    # 리스크 칩+텍스트
+    if cur_risks:
+        risk_items = ""
+        for r in cur_risks:
+            cat = _val(r.get("분류"))
+            chip_bg, chip_fg = CHIP_PALETTE.get(cat, ("#eef2f7", "#374151"))
+            risk_items += (
+                f'<div style="margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;">'
+                f'<span style="background:{chip_bg};color:{chip_fg};font-size:0.78rem;font-weight:700;'
+                f'padding:3px 10px;border-radius:12px;white-space:nowrap;flex-shrink:0;line-height:1.5;">{cat}</span>'
+                f'<span style="color:#333;font-size:0.92rem;line-height:1.55;">{_val(r.get("내용"))}</span>'
+                f'</div>'
             )
-        else:
-            risk_html = '<span style="color:#bbb;">-</span>'
+    else:
+        risk_items = '<div style="color:#bbb;font-size:0.88rem;">특이 리스크 없음</div>'
 
-        # 실무 제안 셀 (액션 + 시점/비중/대상 메타 + 근거)
-        cur_actions = actions_by_cur.get(cur, [])
-        if cur_actions:
-            action_blocks = []
-            for a in cur_actions:
-                action = _val(a.get("액션"))
-                meta_parts = []
-                for k, label in [("시점", "시점"), ("비중", "비중"), ("환전 대상", "대상")]:
-                    val = _val(a.get(k))
-                    if val and val != "-":
-                        meta_parts.append(f"{label}: <b>{val}</b>")
-                meta = " · ".join(meta_parts)
-                reason = _val(a.get("근거"))
-                action_blocks.append(
-                    f'<div style="margin-bottom:4px;"><b style="color:#2E8B57;">▸ {action}</b>'
-                    + (f' <span style="color:#888;font-size:0.82rem;">({meta})</span>' if meta else "")
-                    + (f'<br><span style="color:#444;">{reason}</span>' if reason and reason != "-" else "")
-                    + "</div>"
-                )
-            action_html = "".join(action_blocks)
-        else:
-            action_html = '<span style="color:#bbb;">-</span>'
-
-        is_total = (cur == "전사")
-        row_bg = "background:#ececec;" if is_total else ""
-        cur_bg = "#dcdcdc" if is_total else "#f8f9fc"
-        cur_size = "1.05rem" if is_total else "1.0rem"
-
-        rows_html += (
-            f'<tr style="{row_bg}">'
-            f'<td style="padding:12px 13px;border:1px solid #ddd;text-align:center;font-weight:700;background:{cur_bg};font-size:{cur_size};vertical-align:middle;">{cur}</td>'
-            f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.93rem;line-height:1.6;vertical-align:top;">{pos}</td>'
-            f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.9rem;line-height:1.6;vertical-align:top;">{risk_html}</td>'
-            f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.9rem;line-height:1.6;vertical-align:top;">{action_html}</td>'
-            f'</tr>'
-        )
+    # 실무 제안 미니 카드
+    if cur_actions:
+        action_cards = ""
+        for i, a in enumerate(cur_actions, 1):
+            num = ["①", "②", "③", "④"][min(i - 1, 3)]
+            action = _val(a.get("액션"))
+            reason = _val(a.get("근거"))
+            meta_rows = ""
+            for k, label in [("시점", "시점"), ("비중", "비중"), ("환전 대상", "대상")]:
+                v = _val(a.get(k))
+                if v and v != "-":
+                    meta_rows += (
+                        f'<div style="display:flex;gap:8px;margin-top:3px;font-size:0.85rem;">'
+                        f'<span style="color:#888;min-width:36px;">{label}</span>'
+                        f'<span style="color:#222;font-weight:600;">{v}</span>'
+                        f'</div>'
+                    )
+            reason_html = (
+                f'<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e5e7eb;'
+                f'color:#555;font-size:0.85rem;line-height:1.55;">💡 {reason}</div>'
+                if reason and reason != "-" else ""
+            )
+            action_cards += (
+                f'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;'
+                f'padding:12px 14px;margin-bottom:8px;">'
+                f'<div style="font-weight:700;font-size:1.0rem;color:{theme["accent"]};margin-bottom:6px;">{num} {action}</div>'
+                f'{meta_rows}'
+                f'{reason_html}'
+                f'</div>'
+            )
+    else:
+        action_cards = '<div style="color:#bbb;font-size:0.88rem;">제안 없음</div>'
 
     return (
-        f'<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;table-layout:fixed;">'
-        f'<colgroup>'
-        f'<col style="width:8%;"><col style="width:25%;">'
-        f'<col style="width:27%;"><col style="width:40%;">'
-        f'</colgroup>'
-        f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">통화</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">▸ 포지션</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;color:#C00000;">▸ 리스크</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;color:#2E8B57;">▸ 실무 제안</th>'
-        f'</tr>'
-        f'{rows_html}'
-        f'</table>'
+        f'<div style="border:2px solid {theme["border"]};border-radius:12px;background:#fff;'
+        f'overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.04);">'
+        # 헤더 배지
+        f'<div style="background:{theme["bg"]};padding:12px 18px;border-bottom:2px solid {theme["border"]};">'
+        f'<span style="font-size:1.4rem;">{theme["flag"]}</span> '
+        f'<span style="font-size:1.15rem;font-weight:700;color:{theme["accent"]};">{theme["name"]}</span>'
+        f'</div>'
+        # 본문
+        f'<div style="padding:16px 18px;">'
+        # 1) 현황 (한 줄 평가)
+        f'<div style="margin-bottom:16px;">'
+        f'<div style="font-weight:700;font-size:0.92rem;color:#374151;margin-bottom:6px;">📊 현황</div>'
+        f'<div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px 14px;'
+        f'border-radius:0 6px 6px 0;color:#1f2937;font-size:0.95rem;line-height:1.6;">{pos_summary}</div>'
+        f'</div>'
+        # 2) 리스크
+        f'<div style="margin-bottom:16px;">'
+        f'<div style="font-weight:700;font-size:0.92rem;color:#C00000;margin-bottom:8px;">⚠️ 리스크</div>'
+        f'<div style="border-left:3px solid #fca5a5;padding-left:12px;">{risk_items}</div>'
+        f'</div>'
+        # 3) 실무 제안
+        f'<div>'
+        f'<div style="font-weight:700;font-size:0.92rem;color:#15803d;margin-bottom:8px;">🎯 실무 제안</div>'
+        f'<div style="border-left:3px solid #86efac;padding-left:12px;">{action_cards}</div>'
+        f'</div>'
+        f'</div>'
+        f'</div>'
     )
 
 
@@ -1920,15 +1937,16 @@ def _render_portfolio_decision(d):
             unsafe_allow_html=True,
         )
         return
-    table_html = _build_unified_decision_table(d)
     st.markdown(
-        f'<div style="margin-top:18px;padding:18px 22px;background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;">'
-        f'<div style="font-weight:700;font-size:1.1rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 '
-        f'<span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · USD·CNY)</span></div>'
-        f'{table_html}'
-        f'</div>',
+        f'<div style="margin-top:18px;font-weight:700;font-size:1.1rem;color:#2E75B6;">📋 통합 의사결정 분석 '
+        f'<span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · USD·CNY)</span></div>',
         unsafe_allow_html=True,
     )
+    col_usd, col_cny = st.columns(2, gap="medium")
+    with col_usd:
+        st.markdown(_build_decision_card("USD", d), unsafe_allow_html=True)
+    with col_cny:
+        st.markdown(_build_decision_card("CNY", d), unsafe_allow_html=True)
 
 _render_portfolio_decision(g_portfolio_decision)
 
@@ -2200,15 +2218,18 @@ def _gen_html():
     # 통합 표 HTML (UI와 동일)
     unified_table_html = _build_unified_table_html()
 
-    # AI 통합 의사결정 박스 HTML (단일 통합 표)
+    # AI 통합 의사결정 카드 HTML (USD/CNY 좌우 배치)
     if g_portfolio_decision.get("error"):
         ai_html = f'<div style="background:#fdf2f2;border-left:4px solid #C00000;padding:12px 16px;margin:12px 0;font-size:0.9rem;">⚠️ AI 통합 분석 실패: {g_portfolio_decision["error"]}</div>'
     else:
         ai_html = (
-            f'<div style="background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;padding:18px 22px;margin:14px 0 20px;">'
+            f'<div style="margin:14px 0 20px;">'
             f'<div style="font-weight:700;font-size:1.05rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 '
             f'<span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · USD·CNY)</span></div>'
-            f'{_build_unified_decision_table(g_portfolio_decision)}'
+            f'<div style="display:flex;gap:14px;flex-wrap:wrap;">'
+            f'<div style="flex:1;min-width:300px;">{_build_decision_card("USD", g_portfolio_decision)}</div>'
+            f'<div style="flex:1;min-width:300px;">{_build_decision_card("CNY", g_portfolio_decision)}</div>'
+            f'</div>'
             f'</div>'
         )
 

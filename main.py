@@ -1847,7 +1847,6 @@ def _build_unified_decision_table(decision):
             continue
         cur = str(c.get("통화", "")).strip()
         pos = _val(c.get("포지션 요약"))
-        pnl = _val(c.get("외환차손익"))
 
         # 리스크 셀 (분류 prefix + 내용)
         cur_risks = risks_by_cur.get(cur, [])
@@ -1891,7 +1890,6 @@ def _build_unified_decision_table(decision):
             f'<tr style="{row_bg}">'
             f'<td style="padding:12px 13px;border:1px solid #ddd;text-align:center;font-weight:700;background:{cur_bg};font-size:{cur_size};vertical-align:middle;">{cur}</td>'
             f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.93rem;line-height:1.6;vertical-align:top;">{pos}</td>'
-            f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.95rem;line-height:1.6;font-weight:700;vertical-align:top;text-align:right;">{pnl}</td>'
             f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.9rem;line-height:1.6;vertical-align:top;">{risk_html}</td>'
             f'<td style="padding:12px 13px;border:1px solid #eee;font-size:0.9rem;line-height:1.6;vertical-align:top;">{action_html}</td>'
             f'</tr>'
@@ -1900,13 +1898,12 @@ def _build_unified_decision_table(decision):
     return (
         f'<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;table-layout:fixed;">'
         f'<colgroup>'
-        f'<col style="width:8%;"><col style="width:22%;"><col style="width:14%;">'
-        f'<col style="width:24%;"><col style="width:32%;">'
+        f'<col style="width:8%;"><col style="width:25%;">'
+        f'<col style="width:27%;"><col style="width:40%;">'
         f'</colgroup>'
         f'<tr style="background:#f0f4ff;text-align:center;">'
         f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">통화</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">▸ 포지션 현황</th>'
-        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">▸ 외환차손익</th>'
+        f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;">▸ 포지션</th>'
         f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;color:#C00000;">▸ 리스크</th>'
         f'<th style="padding:10px;border:1px solid #ddd;font-size:0.95rem;color:#2E8B57;">▸ 실무 제안</th>'
         f'</tr>'

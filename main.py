@@ -1669,7 +1669,7 @@ _render_table_with_filter()
 # === 통합 의사결정 분석 (Claude AI · 전사 포트폴리오) ===
 @st.cache_data(ttl=86400, show_spinner=False)
 def _ai_portfolio_decision(payload: str) -> dict:
-    result = {"current": "", "risks": [], "actions": [], "error": ""}
+    result = {"current": [], "risks": [], "actions": [], "error": ""}
     if not ANTHROPIC_API_KEY:
         result["error"] = "API 키 미설정"
         return result
@@ -1679,31 +1679,58 @@ def _ai_portfolio_decision(payload: str) -> dict:
         client = Anthropic(api_key=ANTHROPIC_API_KEY, timeout=30.0)
         msg = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=2000,
+            max_tokens=2500,
             system="""너는 글로벌 의류 기업 F&F의 외환 트레저리 전략가야.
-USD와 CNY 두 통화의 포지션 데이터만 보고 [현황 - 리스크 - 실무 제안] 의사결정 분석을 작성해.
+USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제안]을 표 형태 JSON으로 작성해.
+
+[F&F 비즈니스 컨텍스트 — 반드시 준수]
+- USD 미결채무: 결제일이 사전 확정 → "조기결제" 권고 절대 금지
+- CNY 미결채무 없음 → "CNY 결제 시점 조정" 류 권고 금지
+- USD는 결제용 외화 → "USD를 KRW로 매도/환전/팔아라" 권고 절대 금지
+- CNY는 자유 매도 가능 자산 → 매도 시기·비중·환전 대상(KRW/USD)을 정확히 분석
 
 [출력 포맷] 정확히 다음 JSON만 출력 (마크다운 코드블록 없이):
 {
-  "current": "한 단락 USD·CNY 포지션 종합 요약 (외환차손익 합계·순노출 방향. <b>HTML 강조</b> 가능)",
-  "risks": ["리스크 1 (한 줄)", "리스크 2", "..."],
-  "actions": ["① 제안 1", "② 제안 2", "③ 제안 3 (선택)"]
+  "current": [
+    {"통화": "USD", "포지션 요약": "보유/채권/채무/순노출 한 줄 (50자 이내)", "외환차손익": "외환차익 +XXX백만 원 또는 외환차손 -XXX백만 원"},
+    {"통화": "CNY", "포지션 요약": "...", "외환차손익": "..."},
+    {"통화": "전사", "포지션 요약": "USD+CNY 통합 한 줄", "외환차손익": "합계 ..."}
+  ],
+  "risks": [
+    {"통화": "CNY", "분류": "환변동/기회비용/유동성/변동성 중 1개", "내용": "한 줄 (60자 이내)"},
+    {"통화": "USD", "분류": "...", "내용": "..."}
+  ],
+  "actions": [
+    {"통화": "CNY", "액션": "매도/보유/관망 중 1개", "시점": "이번주 X요일 또는 환율 X원 도달 시 등 구체적", "비중": "30%/50%/70%/100% 중 1개 또는 -", "환전 대상": "KRW 또는 USD 또는 -", "근거": "한 줄 (60자 이내)"},
+    {"통화": "USD", "액션": "보유/매수/헤지/관망 중 1개", "시점": "...", "비중": "-", "환전 대상": "-", "근거": "..."}
+  ]
 }
 
-[분석 대상 — USD와 CNY만]
-- 다른 통화(EUR/HKD/TWD/JPY 등)는 분석에서 제외하고 언급도 금지
-- 통화별 외환차익(+) 또는 외환차손(-) 강도, 순노출 방향, 환율 민감도, 채무 부담을 종합 판단
+[CNY 매도 분석 — 가장 중요]
+시점 판단:
+  - 당일 CNY/KRW가 금주 전망 밴드 상단 근처면 "이번주 매도"
+  - 3개월 평균 대비 +1% 이상이면 "차익 실현 적기"
+  - 3개월 평균 대비 -1% 이하면 "관망 권고"
+  - 그 외 중립 구간이면 밴드 중간값 도달 시점 제시
+비중:
+  - 외환차익 ≥ 5% → 50~70%
+  - 외환차익 1~5% → 30%
+  - 외환차익 < 1% 또는 차손 → 관망 (비중 "-")
+환전 대상:
+  - KRW: 외환차익 즉시 확정 목적 (가장 흔한 선택)
+  - USD: USD 미결채무 결제 자금 추가 확보가 시급할 때만
+  - 둘 중 어떤 것이 외환차손익 극대화에 유리한지 정확히 비교
+
+[USD 액션 — 매도 금지]
+- 보유: 평가손실/보합 구간 → "보유 유지"
+- 매수: 결제용 USD 추가 확보 필요 시 → 분할 매수 시점 제시
+- 헤지: 장기 채무가 있고 환율 상승 우려 시 → 선물환/스왑 검토
 
 [용어 규칙]
-- "외환평가이익" / "평가이익" 같은 표현 금지
-- 양수면 "외환차익", 음수면 "외환차손" 으로 표기
-- "USD를 KRW로 환전/매도/팔아라" 등 매도 권고 절대 금지
-- USD는 결제용 외화이므로 보유·헤지·매수·결제 시점 조정 위주로만 권고
-
-[작성 규칙]
-- 결론부터, 근거 숫자(금액·환율·외환차손익 KRW 또는 %) 인용
-- 리스크 2~3개, 실무 제안 2~3개
-- 한국어 한 줄 (각 항목 최대 70자)
+- "외환평가이익/평가손실" 금지 → "외환차익/외환차손"
+- 한국어, 각 항목 최대 60자
+- 시점은 구체적인 요일/환율 수치 포함
+- 비중은 항상 % 표기 또는 "-"
 - 다른 텍스트 출력 금지.""",
             messages=[{"role": "user", "content": payload}],
         )
@@ -1714,7 +1741,7 @@ USD와 CNY 두 통화의 포지션 데이터만 보고 [현황 - 리스크 - 실
                 text = text[4:]
             text = text.strip()
         parsed = _json.loads(text)
-        result["current"] = parsed.get("current", "")
+        result["current"] = parsed.get("current", []) or []
         result["risks"] = parsed.get("risks", []) or []
         result["actions"] = parsed.get("actions", []) or []
         return result
@@ -1723,42 +1750,102 @@ USD와 CNY 두 통화의 포지션 데이터만 보고 [현황 - 리스크 - 실
         return result
 
 
-# 페이로드 빌드 (전 통화)
+# 페이로드 빌드 (USD/CNY 중심 + 3개월 추세)
 _pf_lines = []
-for cur in all_currencies:
+for cur in ["USD", "CNY"]:
+    if cur not in per_cur:
+        continue
     d = per_cur[cur]
     if d["cash"] == 0 and d["ar"] == 0 and d["ap"] == 0:
         continue
     rate_str = (
-        f"현금 장부 {d['cash_book']:,.2f}원 / 당일 {d['mkt']:,.2f}원" if (d["cash_book"] and d["mkt"])
-        else f"당일 {d['mkt']:,.2f}원" if d["mkt"]
-        else "환율 미수집"
+        f"현금 장부 {d['cash_book']:,.2f}원 / 당일 {d['mkt']:,.2f}원"
+        if (d["cash_book"] and d["mkt"]) else f"당일 {d['mkt']:,.2f}원"
     )
     _pf_lines.append(
         f"■ {cur} ({rate_str})\n"
-        f"  - 보유 현금: {d['cash']:,.0f} ({d['cash_book_krw']/1_000_000:,.0f}백만원, 평가손익 {d['cash_pnl']/1_000_000:+,.0f}백만원)\n"
+        f"  - 보유 현금: {d['cash']:,.0f} (장부 {d['cash_book_krw']/1_000_000:,.0f}백만원, 외환차손익 {d['cash_pnl']/1_000_000:+,.0f}백만원)\n"
         f"  - 미결 채권: {d['ar']:,.0f} (장부평균 {d['ar_book']:,.2f}원, {d['ar_book_krw']/1_000_000:,.0f}백만원)\n"
         f"  - 미결 채무: {d['ap']:,.0f} (장부평균 {d['ap_book']:,.2f}원, {d['ap_book_krw']/1_000_000:,.0f}백만원)\n"
-        f"  - 순 노출: {d['net_amt']:+,.0f} (장부 {d['net_book_krw']/1_000_000:+,.0f}백만원 → 당일 {d['net_mkt_krw']/1_000_000:+,.0f}백만원, 외환차손익 {d['net_pnl']/1_000_000:+,.0f}백만원)"
+        f"  - 순 노출: {d['net_amt']:+,.0f} → 외환차손익 합계 {d['net_pnl']/1_000_000:+,.0f}백만원"
     )
 
-_total_pnl = sum(per_cur[c]["net_pnl"] for c in all_currencies)
-_total_net_krw = sum(per_cur[c]["net_mkt_krw"] for c in all_currencies)
+_usd_pnl_total = per_cur.get("USD", {}).get("net_pnl", 0)
+_cny_pnl_total = per_cur.get("CNY", {}).get("net_pnl", 0)
+_grand_pnl = _usd_pnl_total + _cny_pnl_total
+
+# 3개월 추세 (Claude의 매도 시점 판단 근거)
+_avg3m_usd = float(stats["avg_3m"]["USD_KRW"])
+_avg3m_cny = float(stats["avg_3m"]["CNY_KRW"])
+_usd_vs_3m = (usd_mkt - _avg3m_usd) / _avg3m_usd * 100 if _avg3m_usd else 0
+_cny_vs_3m = (cny_mkt - _avg3m_cny) / _avg3m_cny * 100 if _avg3m_cny else 0
+_avg_lw_cny = float(stats["avg_lw"]["CNY_KRW"])
+_cny_vs_lw = (cny_mkt - _avg_lw_cny) / _avg_lw_cny * 100 if _avg_lw_cny else 0
+
+# CNY 매도 가이드 데이터 (Claude 분석 보조)
+_cny_book = per_cur.get("CNY", {}).get("cash_book", 0)
+_cny_mkt_now = per_cur.get("CNY", {}).get("mkt", 0)
+_cny_book_pct = (_cny_mkt_now - _cny_book) / _cny_book * 100 if _cny_book else 0
+_cny_band_mid = (cny_lo + cny_hi) / 2
+_cny_band_position = "밴드 상단 근처" if cny_mkt > _cny_band_mid + (cny_hi - cny_lo) * 0.2 else (
+    "밴드 하단 근처" if cny_mkt < _cny_band_mid - (cny_hi - cny_lo) * 0.2 else "밴드 중간"
+)
 
 g_portfolio_payload = (
     f"[전사 외환 포지션 — {latest_date} 기준]\n\n"
     + "\n\n".join(_pf_lines) + "\n\n"
-    f"[전사 합계]\n"
-    f"- 현재기준 외환차손익 합계: {_total_pnl/1_000_000:+,.0f}백만 원\n"
-    f"- 순 노출금액 합계 (KRW 환산): {_total_net_krw/1_000_000:+,.0f}백만 원\n\n"
+    f"[전사 합계 (USD+CNY)]\n"
+    f"- 외환차손익 합계: {_grand_pnl/1_000_000:+,.0f}백만 원\n\n"
     f"[금주 환율 전망]\n"
-    f"- USD/KRW 밴드: {usd_lo:,} ~ {usd_hi:,}원 ({usd_dir})\n"
-    f"- CNY/KRW 밴드: {cny_lo:,} ~ {cny_hi:,}원 ({cny_dir})\n"
-    f"- USD/CNY 재정환율: {cross_lo} ~ {cross_hi} ({cross_dir})"
+    f"- USD/KRW 밴드: {usd_lo:,} ~ {usd_hi:,}원 (방향 {usd_dir})\n"
+    f"- CNY/KRW 밴드: {cny_lo:,} ~ {cny_hi:,}원 (방향 {cny_dir}, 중간값 {_cny_band_mid:,.1f}원)\n"
+    f"- 당일 CNY/KRW 위치: {_cny_band_position} (당일 {cny_mkt:,.2f}원)\n\n"
+    f"[3개월 환율 동향 (CNY 매도 타이밍 핵심 데이터)]\n"
+    f"- USD/KRW: 3개월 평균 {_avg3m_usd:,.2f}원, 당일 {usd_mkt:,.2f}원 ({_usd_vs_3m:+.2f}%)\n"
+    f"- CNY/KRW: 3개월 평균 {_avg3m_cny:,.2f}원, 당일 {cny_mkt:,.2f}원 ({_cny_vs_3m:+.2f}%)\n"
+    f"- CNY/KRW 전주 평균 대비 당일: {_cny_vs_lw:+.2f}%\n"
+    f"- CNY 보유 장부 대비 당일 환율: {_cny_book_pct:+.2f}% (외환차익+ / 외환차손-)\n\n"
+    f"[F&F 결제·매도 컨텍스트 — 반드시 반영]\n"
+    f"- USD 미결채무: 결제일 사전 확정 → 조기결제 불가, 매도 권고 금지\n"
+    f"- CNY 미결채무: 0 (없음) → CNY 채무 관련 액션 금지\n"
+    f"- CNY 매도는 자유: KRW(즉시 차익 확정) 또는 USD(USD 채무 결제용) 중 선택\n"
+    f"- USD는 채무 결제용 외화 → 보유·매수·헤지만 권고 가능 (매도 절대 금지)"
 )
 
-with st.spinner("Claude가 전사 포트폴리오 의사결정 분석 중..."):
+with st.spinner("Claude가 USD·CNY 의사결정 분석 중..."):
     g_portfolio_decision = _ai_portfolio_decision(g_portfolio_payload)
+
+
+def _build_decision_table(headers, rows, key_order, header_bg="#f0f4ff", first_bold=True, accent_col=None):
+    """딕셔너리 리스트를 HTML 표로 변환."""
+    if not rows:
+        return f'<div style="font-size:0.88rem;color:#888;padding:8px 12px;">데이터 없음</div>'
+    th = "".join(
+        f'<th style="padding:9px 12px;border:1px solid #ddd;background:{header_bg};text-align:center;font-weight:700;font-size:0.92rem;">{h}</th>'
+        for h in headers
+    )
+    body = ""
+    for r in rows:
+        cells = ""
+        for i, k in enumerate(key_order):
+            val = r.get(k, "-") if isinstance(r, dict) else "-"
+            val_str = "-" if val in (None, "", "nan") else str(val)
+            extra = ""
+            if i == 0 and first_bold:
+                extra = "font-weight:700;background:#fafbff;text-align:center;"
+            else:
+                extra = "text-align:left;"
+            # 통화별 색상 강조 (전사 행은 회색 배경)
+            if i == 0 and val_str == "전사":
+                extra = "font-weight:700;background:#ececec;text-align:center;"
+            cells += (
+                f'<td style="padding:9px 12px;border:1px solid #eee;font-size:0.9rem;line-height:1.55;{extra}">{val_str}</td>'
+            )
+        body += f"<tr>{cells}</tr>"
+    return (
+        f'<table style="width:100%;border-collapse:collapse;margin:6px 0 12px 0;border:1px solid #ddd;">'
+        f'<tr>{th}</tr>{body}</table>'
+    )
 
 
 def _render_portfolio_decision(d):
@@ -1769,14 +1856,32 @@ def _render_portfolio_decision(d):
             unsafe_allow_html=True,
         )
         return
-    risks_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in d["risks"])
-    actions_html = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in d["actions"])
+
+    current_table = _build_decision_table(
+        ["통화", "포지션 요약", "외환차손익"],
+        d.get("current", []),
+        ["통화", "포지션 요약", "외환차손익"],
+    )
+    risks_table = _build_decision_table(
+        ["통화", "분류", "내용"],
+        d.get("risks", []),
+        ["통화", "분류", "내용"],
+        header_bg="#fdf2f2",
+    )
+    actions_table = _build_decision_table(
+        ["통화", "액션", "시점", "비중", "환전 대상", "근거"],
+        d.get("actions", []),
+        ["통화", "액션", "시점", "비중", "환전 대상", "근거"],
+        header_bg="#f0fdf4",
+    )
+
     st.markdown(
-        f'<div style="margin-top:18px;padding:18px 22px;background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;font-size:0.93rem;line-height:1.75;">'
-        f'<div style="font-weight:700;font-size:1.05rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 <span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · 전사 포트폴리오)</span></div>'
-        f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{d["current"]}</div>'
-        f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html}</div>'
-        f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html}</div>'
+        f'<div style="margin-top:18px;padding:18px 22px;background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;">'
+        f'<div style="font-weight:700;font-size:1.1rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 '
+        f'<span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · USD·CNY)</span></div>'
+        f'<div style="font-weight:700;color:#333;margin:14px 0 4px 0;">▸ 현황</div>{current_table}'
+        f'<div style="font-weight:700;color:#C00000;margin:14px 0 4px 0;">▸ 리스크</div>{risks_table}'
+        f'<div style="font-weight:700;color:#2E8B57;margin:14px 0 4px 0;">▸ 실무 제안</div>{actions_table}'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -2051,18 +2156,34 @@ def _gen_html():
     # 통합 표 HTML (UI와 동일)
     unified_table_html = _build_unified_table_html()
 
-    # AI 통합 의사결정 박스 HTML
+    # AI 통합 의사결정 박스 HTML (3개 표 형태)
     if g_portfolio_decision.get("error"):
         ai_html = f'<div style="background:#fdf2f2;border-left:4px solid #C00000;padding:12px 16px;margin:12px 0;font-size:0.9rem;">⚠️ AI 통합 분석 실패: {g_portfolio_decision["error"]}</div>'
     else:
-        risks_html_x = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;• {r}<br>" for r in g_portfolio_decision.get("risks", []))
-        actions_html_x = "".join(f"&nbsp;&nbsp;&nbsp;&nbsp;{a}<br>" for a in g_portfolio_decision.get("actions", []))
+        cur_t = _build_decision_table(
+            ["통화", "포지션 요약", "외환차손익"],
+            g_portfolio_decision.get("current", []),
+            ["통화", "포지션 요약", "외환차손익"],
+        )
+        risk_t = _build_decision_table(
+            ["통화", "분류", "내용"],
+            g_portfolio_decision.get("risks", []),
+            ["통화", "분류", "내용"],
+            header_bg="#fdf2f2",
+        )
+        act_t = _build_decision_table(
+            ["통화", "액션", "시점", "비중", "환전 대상", "근거"],
+            g_portfolio_decision.get("actions", []),
+            ["통화", "액션", "시점", "비중", "환전 대상", "근거"],
+            header_bg="#f0fdf4",
+        )
         ai_html = (
-            f'<div style="background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;padding:18px 22px;margin:14px 0 20px;font-size:0.92rem;line-height:1.75;">'
-            f'<div style="font-weight:700;font-size:1.05rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 <span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · 전사 포트폴리오)</span></div>'
-            f'<div style="margin-bottom:10px;"><b style="color:#333;">▸ 현황</b><br>&nbsp;&nbsp;&nbsp;&nbsp;{g_portfolio_decision.get("current","")}</div>'
-            f'<div style="margin-bottom:10px;"><b style="color:#C00000;">▸ 리스크</b><br>{risks_html_x}</div>'
-            f'<div><b style="color:#2E8B57;">▸ 실무 제안</b><br>{actions_html_x}</div>'
+            f'<div style="background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;padding:18px 22px;margin:14px 0 20px;">'
+            f'<div style="font-weight:700;font-size:1.05rem;margin-bottom:12px;color:#2E75B6;">📋 통합 의사결정 분석 '
+            f'<span style="font-size:0.78rem;color:#888;font-weight:400;">(Claude AI · USD·CNY)</span></div>'
+            f'<div style="font-weight:700;color:#333;margin:14px 0 4px 0;">▸ 현황</div>{cur_t}'
+            f'<div style="font-weight:700;color:#C00000;margin:14px 0 4px 0;">▸ 리스크</div>{risk_t}'
+            f'<div style="font-weight:700;color:#2E8B57;margin:14px 0 4px 0;">▸ 실무 제안</div>{act_t}'
             f'</div>'
         )
 

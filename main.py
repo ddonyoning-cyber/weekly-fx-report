@@ -1758,7 +1758,7 @@ def _render_cny_simulator():
             unsafe_allow_html=True,
         )
 
-_render_cny_simulator()
+# 시뮬레이터는 AI 카드 아래로 이동 (아래쪽에서 _render_cny_simulator() 호출)
 
 
 # === 통합 의사결정 분석 (Claude AI · 전사 포트폴리오) ===
@@ -1909,9 +1909,36 @@ g_portfolio_payload = (
     f"[F&F 결제·매도 컨텍스트 — 반드시 반영]\n"
     f"- USD 미결채무: 결제일 사전 확정 → 조기결제 불가, 매도 권고 금지\n"
     f"- CNY 미결채무: 0 (없음) → CNY 채무 관련 액션 금지\n"
-    f"- CNY 매도는 자유: KRW(즉시 차익 확정) 또는 USD(USD 채무 결제용) 중 선택\n"
     f"- USD는 채무 결제용 외화 → 보유·매수·헤지만 권고 가능 (매도 절대 금지)"
 )
+
+# CNY 매도 환전 대상 자동 비교 (Python 사전 계산 — Claude 결정에 그대로 사용)
+_decided_target = "KRW"
+_decided_diff = 0
+_target_compare_block = ""
+if cny_mkt and cross_rate and usd_mkt:
+    _krw_path = float(cny_mkt)  # 1 CNY → KRW 직접
+    _usd_path = float(usd_mkt) / float(cross_rate)  # 1 CNY → USD → KRW
+    _decided_diff = _usd_path - _krw_path
+    if _decided_diff > 0.001:
+        _decided_target = "USD"
+        _verdict = f"USD 경유가 +{_decided_diff:.3f}원/CNY 유리 → 환전 대상은 USD"
+    elif _decided_diff < -0.001:
+        _decided_target = "KRW"
+        _verdict = f"KRW 직접이 +{abs(_decided_diff):.3f}원/CNY 유리 → 환전 대상은 KRW"
+    else:
+        _decided_target = "KRW"
+        _verdict = "양 경로 동등 → 환전 대상은 KRW (수수료 절감)"
+    _target_compare_block = (
+        f"\n\n[CNY 매도 환전 대상 — 사전 계산 결과 (이 값 그대로 사용)]\n"
+        f"- 직접 (CNY → KRW): 1 CNY × {cny_mkt:,.2f}원 = {_krw_path:.3f}원\n"
+        f"- 우회 (CNY → USD → KRW): (1 ÷ {cross_rate:.4f}) × {usd_mkt:,.2f}원 = {_usd_path:.3f}원\n"
+        f"- 결론: {_verdict}\n"
+        f"- 모든 CNY 매도 액션의 '환전 대상' 필드는 반드시 **{_decided_target}**\n"
+        f"- '근거' 필드에 두 경로 비교 수치를 그대로 인용 (예: '직접 {_krw_path:.2f}원 vs USD경유 {_usd_path:.2f}원 → {_decided_target} 유리')"
+    )
+
+g_portfolio_payload = g_portfolio_payload + _target_compare_block
 
 with st.spinner("Claude가 USD·CNY 의사결정 분석 중..."):
     g_portfolio_decision = _ai_portfolio_decision(g_portfolio_payload)
@@ -1965,26 +1992,71 @@ def _cell_risks(decision, currency):
 
 
 def _cell_actions(decision, currency):
+    import re
     actions = [a for a in (decision.get("actions", []) or [])
                if isinstance(a, dict) and str(a.get("통화", "")).strip() == currency]
     if not actions:
         return '<div style="color:#bbb;font-size:0.88rem;">제안 없음</div>'
     accent = CURRENCY_THEME.get(currency, {}).get("header_fg", "#15803d")
+
+    cur_d = per_cur.get(currency, {})
+    cash_amt = cur_d.get("cash", 0)
+    mkt_v = cur_d.get("mkt", 0)
+
     cards = ""
     for i, a in enumerate(actions, 1):
         num = ["①", "②", "③", "④"][min(i - 1, 3)]
         action = _val(a.get("액션"))
         reason = _val(a.get("근거"))
+
+        # CNY 매도 액션이면 환전 대상을 사전 계산 결과로 강제 보정
+        target_raw = _val(a.get("환전 대상"))
+        target = target_raw
+        if currency == "CNY" and "매도" in action:
+            target = _decided_target  # KRW vs USD 비교 결과
+
+        # 비중에서 % 추출 → 환전 금액 계산
+        pct_str = _val(a.get("비중"))
+        m = re.search(r'(\d+)\s*%', pct_str)
+        converted_str = ""
+        sell_amt_str = ""
+        if m and currency == "CNY" and "매도" in action and cash_amt > 0:
+            pct_val = int(m.group(1)) / 100
+            sell_cny = cash_amt * pct_val
+            sell_amt_str = f"{sell_cny:,.0f} CNY"
+            if target == "KRW" and mkt_v:
+                received = sell_cny * mkt_v
+                converted_str = f"≈ {received:,.0f}원 확보"
+            elif target == "USD" and mkt_v and cross_rate:
+                received = sell_cny / float(cross_rate)
+                converted_str = f"≈ ${received:,.2f} 확보"
+
         meta_rows = ""
-        for k, label in [("시점", "시점"), ("비중", "비중"), ("환전 대상", "대상")]:
-            v = _val(a.get(k))
-            if v and v != "-":
+        for k, label, val in [
+            ("시점", "시점", _val(a.get("시점"))),
+            ("비중", "비중", pct_str),
+            ("환전 대상", "대상", target),
+        ]:
+            if val and val != "-":
                 meta_rows += (
                     f'<div style="display:flex;gap:8px;margin-top:2px;font-size:0.84rem;">'
                     f'<span style="color:#888;min-width:32px;">{label}</span>'
-                    f'<span style="color:#222;font-weight:600;">{v}</span>'
+                    f'<span style="color:#222;font-weight:600;">{val}</span>'
                     f'</div>'
                 )
+
+        # 환전 금액 라인 (매도 액션에만)
+        amount_html = ""
+        if sell_amt_str:
+            amount_html = (
+                f'<div style="margin-top:6px;padding:6px 10px;background:#eff6ff;'
+                f'border-left:3px solid #2E75B6;border-radius:4px;font-size:0.84rem;">'
+                f'<span style="color:#888;">매도 금액</span> '
+                f'<b style="color:#1e3a8a;">{sell_amt_str}</b>'
+                + (f' <span style="color:#374151;">{converted_str}</span>' if converted_str else "")
+                + f'</div>'
+            )
+
         reason_html = (
             f'<div style="margin-top:7px;padding-top:7px;border-top:1px dashed #e5e7eb;'
             f'color:#555;font-size:0.84rem;line-height:1.55;">💡 {reason}</div>'
@@ -1994,7 +2066,7 @@ def _cell_actions(decision, currency):
             f'<div style="background:#fafbff;border:1px solid #e5e7eb;border-radius:6px;'
             f'padding:10px 12px;margin-bottom:7px;">'
             f'<div style="font-weight:700;font-size:0.95rem;color:{accent};margin-bottom:4px;">{num} {action}</div>'
-            f'{meta_rows}{reason_html}'
+            f'{meta_rows}{amount_html}{reason_html}'
             f'</div>'
         )
     return cards
@@ -2057,6 +2129,9 @@ def _render_portfolio_decision(d):
     )
 
 _render_portfolio_decision(g_portfolio_decision)
+
+# AI 카드 아래에 CNY 환전 시뮬레이션 토글 배치
+_render_cny_simulator()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

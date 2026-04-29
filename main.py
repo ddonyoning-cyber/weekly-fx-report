@@ -2086,11 +2086,16 @@ def _cell_actions(decision, currency):
                 converted_str = f"≈ ${received:,.2f} 확보"
 
         meta_rows = ""
-        for k, label, val in [
-            ("시점", "시점", _val(a.get("시점"))),
-            ("비중", "비중", pct_str),
-            ("환전 대상", "대상", target),
-        ]:
+        # 매도 액션이면 '환전 대상'은 아래 박스에 통합 표시 → 메타 row에서 제외
+        meta_keys = (
+            [("시점", "시점", _val(a.get("시점"))),
+             ("비중", "비중", pct_str)]
+            if (currency == "CNY" and "매도" in action and sell_amt_str)
+            else [("시점", "시점", _val(a.get("시점"))),
+                  ("비중", "비중", pct_str),
+                  ("환전 대상", "대상", target)]
+        )
+        for k, label, val in meta_keys:
             if val and val != "-":
                 meta_rows += (
                     f'<div style="display:flex;gap:8px;margin-top:2px;font-size:0.84rem;">'
@@ -2099,13 +2104,13 @@ def _cell_actions(decision, currency):
                     f'</div>'
                 )
 
-        # 환전 금액 라인 (매도 액션에만, 라벨-값 2줄 정렬)
+        # 환전 금액 라인 (매도 액션에만, 라벨에 대상 통화 포함)
         amount_html = ""
         if sell_amt_str:
             converted_only = converted_str.replace("≈", "").strip() if converted_str else ""
             converted_row = (
                 f'<div style="display:flex;gap:10px;font-size:0.86rem;margin-top:3px;">'
-                f'<span style="color:#888;min-width:48px;">확보</span>'
+                f'<span style="color:#888;min-width:62px;">{target} 확보</span>'
                 f'<span style="color:#1e3a8a;font-weight:700;">≈ {converted_only}</span>'
                 f'</div>'
             ) if converted_only else ""
@@ -2113,7 +2118,7 @@ def _cell_actions(decision, currency):
                 f'<div style="margin-top:7px;padding:8px 11px;background:#eff6ff;'
                 f'border-left:3px solid #2E75B6;border-radius:4px;">'
                 f'<div style="display:flex;gap:10px;font-size:0.86rem;">'
-                f'<span style="color:#888;min-width:48px;">매도</span>'
+                f'<span style="color:#888;min-width:62px;">매도</span>'
                 f'<span style="color:#1e3a8a;font-weight:700;">{sell_amt_str}</span>'
                 f'</div>'
                 f'{converted_row}'

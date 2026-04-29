@@ -1818,7 +1818,8 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
   - 두 차익 중 **큰 쪽이 환전 대상**
   - 페이로드 [CNY 매도 환전 대상 — 사전 결정] 블록의 결정값을 반드시 그대로 사용
   - 모든 CNY 매도 액션의 '환전 대상' 필드 = 사전 결정값
-  - '근거' 필드에 두 환전의 외환차익 비교 수치 그대로 인용 (예: "USD 환전 +X원/CNY > KRW 환전 +Y원/CNY → USD 유리")
+  - '근거' 필드에는 매도 시점·비중 선택 이유만 한 줄로 (예: "밴드 상단 도달 + 3개월 평균 +1.3% 차익 구간")
+  - 환전 대상 비교 수식 (KRW 환전 +X원 = USD 환전 +Y원 등) 절대 근거에 쓰지 말 것
 
 [USD 액션 — 매도 금지]
 - 보유: 외환차손/보합 구간 → "보유 유지"
@@ -2029,6 +2030,11 @@ def _cell_actions(decision, currency):
         num = ["①", "②", "③", "④"][min(i - 1, 3)]
         action = _val(a.get("액션"))
         reason = _val(a.get("근거"))
+        # 환전 대상 비교 수식 제거 (예: "KRW 환전 +22원/CNY = USD 환전 +22원/CNY")
+        reason = re.sub(r'(?:KRW|USD)\s*환전\s*[+\-]?\s*\d[\d,\.]*\s*원\s*/?\s*CNY[^,\.]*[,]?\s*', '', reason)
+        reason = re.sub(r'외환차익\s*\d+(?:\.\d+)?\s*%\s*확정[^,\.]*', '', reason)
+        reason = re.sub(r'\s+→\s*(?:USD|KRW)\s*유리', '', reason)
+        reason = reason.strip(" ,.·→")
 
         # CNY 매도 액션이면 환전 대상을 사전 계산 결과로 강제 보정
         target_raw = _val(a.get("환전 대상"))

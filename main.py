@@ -1512,16 +1512,20 @@ for cur in all_currencies:
     )
 
 # 포맷터 ──────────────────────────────────────
-def _fu_amt(v):
+def _fu_amt(v, paren=False):
     if not v: return "-"
+    if paren and v < 0:
+        return f"({abs(v):,.2f})"
     return f"{v:,.2f}"
 def _fu_rate(v):
     if not v: return "-"
     if abs(v - round(v)) < 1e-6:
         return f"{int(round(v)):,}"
     return f"{v:,.2f}"
-def _fu_krw_won(v):
+def _fu_krw_won(v, paren=False):
     if not v: return "-"
+    if paren and v < 0:
+        return f"({abs(v):,.0f})"
     return f"{v:,.0f}"
 def _fu_pnl_won(v):
     if not v: return "-"
@@ -1543,34 +1547,44 @@ def _build_unified_table_html(cash_curs=None, ar_curs=None, ap_curs=None, net_cu
 
     rows_html = ""
 
-    def _add_section(label, currencies, getter, is_negative=False, highlight=False, big_label=False):
+    def _add_section(label, currencies, getter, is_negative=False, paren_neg=False, highlight=False, big_label=False):
         nonlocal rows_html
         if not currencies:
             return  # 필터로 빈 섹션이면 스킵
         rs = len(currencies)
         section_bg = "#dcdcdc" if highlight else "#f8f9fc"
-        label_size = "1.0rem" if big_label else "0.95rem"
+        label_size = "1.1rem" if big_label else "1.05rem"
         for i, cur in enumerate(currencies):
             d = per_cur[cur]
             amt, book_x, book_krw_x, mkt_x, mkt_krw_x, pnl_x = getter(d)
-            amt_color = "color:#C00000;" if (is_negative and amt < 0) else ""
+            # AP는 () 표기 + 검정색 / Net은 음수면 빨강 / 그 외 기본
+            if paren_neg:
+                amt_str = _fu_amt(amt, paren=True)
+                book_krw_str = _fu_krw_won(book_krw_x, paren=True)
+                mkt_krw_str = _fu_krw_won(mkt_krw_x, paren=True)
+                amt_color = ""
+            else:
+                amt_str = _fu_amt(amt)
+                book_krw_str = _fu_krw_won(book_krw_x)
+                mkt_krw_str = _fu_krw_won(mkt_krw_x)
+                amt_color = "color:#C00000;" if (is_negative and amt < 0) else ""
             row_bg = "background:#ececec;" if highlight else ""
             label_cell = ""
             if i == 0:
                 label_cell = (
                     f'<td rowspan="{rs}" style="font-weight:700;background:{section_bg};text-align:center;'
-                    f'vertical-align:middle;font-size:{label_size};padding:10px 12px;border:1px solid #ddd;">{label}</td>'
+                    f'vertical-align:middle;font-size:{label_size};padding:11px 13px;border:1px solid #ddd;">{label}</td>'
                 )
             rows_html += (
                 f'<tr style="{row_bg}">'
                 f'{label_cell}'
-                f'<td style="text-align:center;font-weight:600;padding:9px 12px;border:1px solid #eee;">{cur}</td>'
-                f'<td style="text-align:right;{amt_color}padding:9px 12px;border:1px solid #eee;">{_fu_amt(amt)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_rate(book_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_won(book_krw_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_rate(mkt_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_krw_won(mkt_krw_x)}</td>'
-                f'<td style="text-align:right;padding:9px 12px;border:1px solid #eee;">{_fu_pnl_won(pnl_x)}</td>'
+                f'<td style="text-align:center;font-weight:600;padding:10px 13px;border:1px solid #eee;">{cur}</td>'
+                f'<td style="text-align:right;{amt_color}padding:10px 13px;border:1px solid #eee;">{amt_str}</td>'
+                f'<td style="text-align:right;padding:10px 13px;border:1px solid #eee;">{_fu_rate(book_x)}</td>'
+                f'<td style="text-align:right;padding:10px 13px;border:1px solid #eee;">{book_krw_str}</td>'
+                f'<td style="text-align:right;padding:10px 13px;border:1px solid #eee;">{_fu_rate(mkt_x)}</td>'
+                f'<td style="text-align:right;padding:10px 13px;border:1px solid #eee;">{mkt_krw_str}</td>'
+                f'<td style="text-align:right;padding:10px 13px;border:1px solid #eee;">{_fu_pnl_won(pnl_x)}</td>'
                 f'</tr>'
             )
 
@@ -1580,31 +1594,31 @@ def _build_unified_table_html(cash_curs=None, ar_curs=None, ap_curs=None, net_cu
                  lambda d: (d["ar"], d["ar_book"], d["ar_book_krw"], d["mkt"], d["ar_mkt_krw"], d["ar_pnl"]))
     _add_section("(C) 미결채무", ap_curs,
                  lambda d: (-d["ap"], d["ap_book"], -d["ap_book_krw"], d["mkt"], -d["ap_mkt_krw"], d["ap_pnl"]),
-                 is_negative=True)
-    _add_section('순 노출금액<br><span style="font-weight:400;font-size:0.78rem;">(A)+(B)-(C)</span>',
+                 paren_neg=True)
+    _add_section('순 노출금액<br><span style="font-weight:400;font-size:0.85rem;">(A)+(B)-(C)</span>',
                  net_curs,
                  lambda d: (d["net_amt"], d["net_book_rate"], d["net_book_krw"], d["mkt"], d["net_mkt_krw"], d["net_pnl"]),
                  is_negative=True, highlight=True, big_label=True)
 
     return (
-        f'<table style="width:100%;border-collapse:collapse;font-size:0.9rem;border:1px solid #ddd;">'
+        f'<table style="width:100%;border-collapse:collapse;font-size:1.0rem;border:1px solid #ddd;">'
         f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">항목</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">통화</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">금액</th>'
-        f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">장부 기준</th>'
-        f'<th colspan="2" style="padding:10px;border:1px solid #ddd;">당일 기준</th>'
-        f'<th rowspan="2" style="padding:10px;border:1px solid #ddd;">현재기준<br>외환차손익</th>'
+        f'<th rowspan="2" style="padding:11px;border:1px solid #ddd;">항목</th>'
+        f'<th rowspan="2" style="padding:11px;border:1px solid #ddd;">통화</th>'
+        f'<th rowspan="2" style="padding:11px;border:1px solid #ddd;">금액</th>'
+        f'<th colspan="2" style="padding:11px;border:1px solid #ddd;">장부 기준</th>'
+        f'<th colspan="2" style="padding:11px;border:1px solid #ddd;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:11px;border:1px solid #ddd;">현재기준<br>외환차손익</th>'
         f'</tr>'
         f'<tr style="background:#f0f4ff;text-align:center;">'
-        f'<th style="padding:6px;border:1px solid #ddd;">보유 평균환율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">매매기준율</th>'
-        f'<th style="padding:6px;border:1px solid #ddd;">원화환산금액</th>'
+        f'<th style="padding:7px;border:1px solid #ddd;">보유 평균환율</th>'
+        f'<th style="padding:7px;border:1px solid #ddd;">원화환산금액</th>'
+        f'<th style="padding:7px;border:1px solid #ddd;">매매기준율</th>'
+        f'<th style="padding:7px;border:1px solid #ddd;">원화환산금액</th>'
         f'</tr>'
         f'{rows_html}'
         f'</table>'
-        f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">채권, 채무 : {latest_date} 기준 SAP상 미결항목</div>'
+        f'<div style="margin-top:6px;font-size:0.85rem;color:#888;">채권, 채무 : {latest_date} 기준 SAP상 미결항목</div>'
     )
 
 # === 통화 필터 + 통합 표 + 합계 외환차손익 (fragment로 격리) ===

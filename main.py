@@ -1811,14 +1811,16 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
   - 외환차익 1~5% → 30%
   - 외환차익 < 1% 또는 외환차손 → 관망 (비중 "-")
 
-환전 대상 (KRW vs USD) — 반드시 두 경로의 KRW 환산 결과를 비교한 뒤 결정:
-  - 직접 경로 (CNY → KRW): 1 CNY × CNY/KRW 환율 = X원
-  - 우회 경로 (CNY → USD → KRW): (1 ÷ USD/CNY 재정환율) × USD/KRW = Y원
-  - X > Y 이면 KRW 직접 환전이 유리 (보통 이 경우)
-  - Y > X 이면 USD 경유가 유리 (단, USD 채무 결제 자금 확보 목적이면 가산점)
-  - 페이로드의 [3개월 환율 동향] 데이터로 두 경로 차이를 계산해 어느 쪽이 외환차익 극대화에 유리한지 명시
-  - "환전 대상" 필드는 반드시 "KRW" 또는 "USD" 중 하나만 (실제 비교 결과 기반)
-  - "근거" 필드에 두 경로 비교 수치(예: "KRW 경유 220.93 vs USD 경유 220.45 → KRW 유리")를 포함
+환전 대상 (KRW vs USD) — 둘 다 외환차익 확정 액션. 차이는 차익을 어떤 통화로 보존하는가:
+  - KRW 환전: 차익을 KRW로 확정·보존 (회사 운영자금/영업이익)
+  - USD 환전: 차익을 USD로 확정·보존 (USD 미결채무 결제 자금 활용)
+  - 둘 다 직접 환전 (경유·재정환율 비교 절대 금지). 환율 우열이 아닌 '차익 보존 목적'으로 선택.
+  - 결정 기준:
+    · USD 결제 자금 부족 → USD 환전 (차익 + 결제 자금 동시 확보)
+    · USD 결제 자금 충분 → KRW 환전 (차익을 운영자금으로 보존)
+  - 페이로드 [CNY 매도 환전 대상 — 사전 결정] 블록의 결정값을 반드시 그대로 사용
+  - 모든 CNY 매도 액션의 '환전 대상' 필드 = 사전 결정값
+  - '근거' 필드에 사전 결정 근거를 인용 (USD 결제 자금 충분/부족 명시)
 
 [USD 액션 — 매도 금지]
 - 보유: 외환차손/보합 구간 → "보유 유지"
@@ -1912,31 +1914,47 @@ g_portfolio_payload = (
     f"- USD는 채무 결제용 외화 → 보유·매수·헤지만 권고 가능 (매도 절대 금지)"
 )
 
-# CNY 매도 환전 대상 자동 비교 (Python 사전 계산 — Claude 결정에 그대로 사용)
-_decided_target = "KRW"
-_decided_diff = 0
-_target_compare_block = ""
-if cny_mkt and cross_rate and usd_mkt:
-    _krw_path = float(cny_mkt)  # 1 CNY → KRW 직접
-    _usd_path = float(usd_mkt) / float(cross_rate)  # 1 CNY → USD → KRW
-    _decided_diff = _usd_path - _krw_path
-    if _decided_diff > 0.001:
-        _decided_target = "USD"
-        _verdict = f"USD 경유가 +{_decided_diff:.3f}원/CNY 유리 → 환전 대상은 USD"
-    elif _decided_diff < -0.001:
-        _decided_target = "KRW"
-        _verdict = f"KRW 직접이 +{abs(_decided_diff):.3f}원/CNY 유리 → 환전 대상은 KRW"
-    else:
-        _decided_target = "KRW"
-        _verdict = "양 경로 동등 → 환전 대상은 KRW (수수료 절감)"
-    _target_compare_block = (
-        f"\n\n[CNY 매도 환전 대상 — 사전 계산 결과 (이 값 그대로 사용)]\n"
-        f"- 직접 (CNY → KRW): 1 CNY × {cny_mkt:,.2f}원 = {_krw_path:.3f}원\n"
-        f"- 우회 (CNY → USD → KRW): (1 ÷ {cross_rate:.4f}) × {usd_mkt:,.2f}원 = {_usd_path:.3f}원\n"
-        f"- 결론: {_verdict}\n"
-        f"- 모든 CNY 매도 액션의 '환전 대상' 필드는 반드시 **{_decided_target}**\n"
-        f"- '근거' 필드에 두 경로 비교 수치를 그대로 인용 (예: '직접 {_krw_path:.2f}원 vs USD경유 {_usd_path:.2f}원 → {_decided_target} 유리')"
+# CNY 매도 환전 대상 자동 결정 — 목적 기반 (USD 결제 자금 부족 여부)
+# F&F는 CNY를 직접 KRW 또는 USD로 환전 (경유 안 함). 선택 기준은 목적:
+#   - KRW 환전: 외환차익 즉시 확정 (회사 운영자금/영업이익 보존)
+#   - USD 환전: USD 미결채무 결제 자금 직접 확보 (USD 매수 절차 생략)
+_usd_d = per_cur.get("USD", {})
+_usd_cash_v = _usd_d.get("cash", 0)
+_usd_ar_short_v = usd_ar_short  # 모듈 레벨 변수 사용
+_usd_ap_short_v = usd_ap_short
+_usd_short_liq = _usd_cash_v + _usd_ar_short_v - _usd_ap_short_v
+_usd_total_ap_v = _usd_d.get("ap", 0)
+_usd_total_liq = _usd_cash_v + _usd_d.get("ar", 0) - _usd_total_ap_v
+
+if _usd_short_liq < 0:
+    _decided_target = "USD"
+    _decided_reason = (
+        f"USD 단기 결제 자금 부족 ({_usd_short_liq:+,.0f} USD) → 차익을 USD로 확정해 결제 자금 직접 확보"
     )
+elif _usd_total_liq < 0:
+    _decided_target = "USD"
+    _decided_reason = (
+        f"USD 전체 순노출 부족 ({_usd_total_liq:+,.0f} USD, 장기 채무 포함) → 차익을 USD로 확정해 사전 확보"
+    )
+else:
+    _decided_target = "KRW"
+    _decided_reason = (
+        f"USD 결제 자금 충분 (단기 유동성 {_usd_short_liq:+,.0f} USD) → 차익을 KRW로 확정해 운영자금 보존"
+    )
+
+_target_compare_block = (
+    f"\n\n[CNY 매도 환전 대상 — 사전 결정 (이 값 그대로 사용)]\n"
+    f"※ KRW 환전과 USD 환전 모두 외환차익 확정 액션. 차이는 차익을 어떤 통화로 보존하는가.\n"
+    f"  - KRW 환전: 차익을 KRW로 확정·보존 (회사 운영자금/영업이익)\n"
+    f"  - USD 환전: 차익을 USD로 확정·보존 (USD 미결채무 결제 자금 활용)\n"
+    f"  ※ 경유·재정환율 비교 금지. 두 액션은 직접 환전이며 환율 우열이 아닌 '목적'으로 선택.\n"
+    f"- USD 단기 결제 자금 (현금+단기AR−단기AP): {_usd_short_liq:+,.0f} USD\n"
+    f"- USD 전체 순노출 (현금+AR−AP): {_usd_total_liq:+,.0f} USD\n"
+    f"- 결정: 환전 대상 = **{_decided_target}**\n"
+    f"- 근거: {_decided_reason}\n"
+    f"- 모든 CNY 매도 액션의 '환전 대상' 필드 = '{_decided_target}'\n"
+    f"- '근거' 필드는 위 결정 근거 인용"
+)
 
 g_portfolio_payload = g_portfolio_payload + _target_compare_block
 

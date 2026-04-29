@@ -1795,8 +1795,8 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
     {"통화": "USD", "분류": "...", "내용": "..."}
   ],
   "actions": [
-    {"통화": "CNY", "액션": "매도/보유/관망 중 1개", "시점": "이번주 X요일 또는 환율 X원 도달 시 등 구체적", "비중": "30%/50%/70%/100% 중 1개 또는 -", "환전 대상": "KRW 또는 USD 또는 -"},
-    {"통화": "USD", "액션": "보유/매수/헤지/관망 중 1개", "시점": "...", "비중": "-", "환전 대상": "-"}
+    {"통화": "CNY", "액션": "매도/보유/관망 중 1개 (반드시 통화당 액션 1개만)", "시점": "이번주 X요일 또는 환율 X원 도달 시 등 구체적", "비중": "30%/50%/70%/100% 중 1개 또는 -", "환전 대상": "KRW 또는 USD 또는 -"},
+    {"통화": "USD", "액션": "보유/매수/헤지/관망 중 1개 (반드시 통화당 액션 1개만)", "시점": "...", "비중": "-", "환전 대상": "-"}
   ]
 }
 
@@ -1824,6 +1824,12 @@ USD와 CNY 두 통화의 포지션을 분석해 [현황 / 리스크 / 실무 제
 - 보유: 외환차손/보합 구간 → "보유 유지"
 - 매수: 결제용 USD 추가 확보 필요 시 → 분할 매수 시점 제시
 - 헤지: 장기 채무가 있고 환율 상승 우려 시 → 선물환/스왑 검토
+
+[액션 개수 — 절대 위반 금지]
+- 통화당 액션은 정확히 1개만 (가장 적합한 단일 추천)
+- CNY 액션 1개 + USD 액션 1개 = 총 2개
+- 매도/보유/관망 중 가장 우선순위 높은 1개만 선택
+- 동일 통화로 여러 액션을 출력하면 안 됨 (예: CNY 매도 1건 + CNY 보유 1건 금지)
 
 [용어 규칙 — 절대 위반 금지]
 - 다음 단어/표현 절대 금지: "평가차익", "평가차손", "평가이익", "평가손익", "평가 손익", "평가손실"
@@ -2052,8 +2058,18 @@ def _cell_actions(decision, currency):
                if isinstance(a, dict) and str(a.get("통화", "")).strip() == currency]
     if not actions:
         return '<div style="color:#bbb;font-size:0.88rem;">제안 없음</div>'
-    accent = CURRENCY_THEME.get(currency, {}).get("header_fg", "#15803d")
 
+    # 통화당 1개 액션만 (AI가 여러 개 반환해도 우선순위로 1개 선택)
+    # 우선순위: 매도 > 매수 > 헤지 > 보유 > 관망
+    def _action_priority(a):
+        act = str(a.get("액션", "")).strip()
+        for i, kw in enumerate(["매도", "매수", "헤지", "보유", "관망"]):
+            if kw in act:
+                return i
+        return 99
+    actions = [sorted(actions, key=_action_priority)[0]]
+
+    accent = CURRENCY_THEME.get(currency, {}).get("header_fg", "#15803d")
     cur_d = per_cur.get(currency, {})
     cash_amt = cur_d.get("cash", 0)
     mkt_v = cur_d.get("mkt", 0)
@@ -2078,9 +2094,34 @@ def _cell_actions(decision, currency):
             pct_val = int(m.group(1)) / 100
             sell_cny = cash_amt * pct_val
             sell_amt_str = f"{sell_cny:,.0f} CNY"
-            if target == "KRW" and mkt_v:
-                received = sell_cny * mkt_v
-                converted_str = f"≈ {received:,.0f}원 확보"
+
+            # 시점에서 환율 트리거 추출 (예: "223원 도달 시", "CNY/KRW 223원")
+            timing_str = _val(a.get("시점"))
+            trigger_rate = None
+            for pat in [
+                r'CNY\s*[/]\s*KRW\s*([\d,\.]+)\s*원',  # "CNY/KRW 223원"
+                r'환율\s*([\d,\.]+)\s*원',                # "환율 223원"
+                r'([\d,\.]+)\s*원\s*도달',                # "223원 도달"
+                r'([\d,\.]+)\s*원',                      # "223원" 일반
+            ]:
+                tm = re.search(pat, timing_str)
+                if tm:
+                    try:
+                        trigger_rate = float(tm.group(1).replace(",", ""))
+                        # 너무 작거나(USD/CNY 같은 재정환율) 너무 큰(USD/KRW 1500대) 값 필터
+                        if 100 < trigger_rate < 500:
+                            break
+                        else:
+                            trigger_rate = None
+                    except ValueError:
+                        trigger_rate = None
+
+            # KRW 환전이면 트리거 환율 우선, 없으면 당일 매매기준율
+            if target == "KRW":
+                rate_used = trigger_rate if trigger_rate else mkt_v
+                if rate_used:
+                    received = sell_cny * rate_used
+                    converted_str = f"≈ {received:,.0f}원 확보"
             elif target == "USD" and mkt_v and cross_rate:
                 received = sell_cny / float(cross_rate)
                 converted_str = f"≈ ${received:,.2f} 확보"

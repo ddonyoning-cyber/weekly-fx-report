@@ -2485,21 +2485,171 @@ else:
 
 
 
+# HTML 다운로드용 통화 필터 + 시뮬레이터 + 차트/KPI 보강 헬퍼
+def _build_unified_table_html_filterable():
+    """HTML 다운로드용: rowspan 없이 통화별 row에 data-cur 부여 → JS 필터 호환."""
+    sections = [
+        ("(A) 보유현금", SECTION_CASH_CURS,
+         lambda d: (d["cash"], d["cash_book"], d["cash_book_krw"], d["mkt"], d["cash_mkt_krw"], d["cash_pnl"]),
+         False, False, False),
+        ("(B) 미결채권", SECTION_AR_CURS,
+         lambda d: (d["ar"], d["ar_book"], d["ar_book_krw"], d["mkt"], d["ar_mkt_krw"], d["ar_pnl"]),
+         False, False, False),
+        ("(C) 미결채무", SECTION_AP_CURS,
+         lambda d: (-d["ap"], d["ap_book"], -d["ap_book_krw"], d["mkt"], -d["ap_mkt_krw"], d["ap_pnl"]),
+         False, True, False),
+        ('순 노출금액<br><span style="font-weight:400;font-size:0.85rem;">(A)+(B)-(C)</span>',
+         SECTION_NET_CURS,
+         lambda d: (d["net_amt"], d["net_book_rate"], d["net_book_krw"], d["mkt"], d["net_mkt_krw"], d["net_pnl"]),
+         True, True, True),
+    ]
+    body = ""
+    for label, currencies, getter, highlight, paren_neg, big in sections:
+        if not currencies:
+            continue
+        section_bg = "#dcdcdc" if highlight else "#f8f9fc"
+        size = "1.05rem" if big else "1.0rem"
+        for cur in currencies:
+            d = per_cur[cur]
+            amt, book, book_krw, mkt, mkt_krw, pnl = getter(d)
+            row_bg = "background:#ececec;" if highlight else ""
+            if paren_neg:
+                amt_str = _fu_amt(amt, paren=True)
+                bk_str = _fu_krw_won(book_krw, paren=True)
+                mk_str = _fu_krw_won(mkt_krw, paren=True)
+                amt_color = ""
+            else:
+                amt_str = _fu_amt(amt)
+                bk_str = _fu_krw_won(book_krw)
+                mk_str = _fu_krw_won(mkt_krw)
+                amt_color = "color:#C00000;" if (paren_neg and amt < 0) else ""
+            body += (
+                f'<tr data-cur="{cur}" data-pnl="{pnl}" style="{row_bg}">'
+                f'<td style="font-weight:700;background:{section_bg};text-align:center;font-size:{size};">{label}</td>'
+                f'<td style="text-align:center;font-weight:600;">{cur}</td>'
+                f'<td style="text-align:right;{amt_color}">{amt_str}</td>'
+                f'<td style="text-align:right;">{_fu_rate(book)}</td>'
+                f'<td style="text-align:right;">{bk_str}</td>'
+                f'<td style="text-align:right;">{_fu_rate(mkt)}</td>'
+                f'<td style="text-align:right;">{mk_str}</td>'
+                f'<td style="text-align:right;">{_fu_pnl_won(pnl)}</td>'
+                f'</tr>'
+            )
+    return (
+        f'<table style="width:100%;border-collapse:collapse;font-size:1.0rem;border:1px solid #ddd;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th rowspan="2" style="padding:11px;">항목</th>'
+        f'<th rowspan="2" style="padding:11px;">통화</th>'
+        f'<th rowspan="2" style="padding:11px;">금액</th>'
+        f'<th colspan="2" style="padding:11px;">장부 기준</th>'
+        f'<th colspan="2" style="padding:11px;">당일 기준</th>'
+        f'<th rowspan="2" style="padding:11px;">현재기준<br>외환차손익</th>'
+        f'</tr>'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:7px;">보유 평균환율</th><th style="padding:7px;">원화환산금액</th>'
+        f'<th style="padding:7px;">매매기준율</th><th style="padding:7px;">원화환산금액</th>'
+        f'</tr>'
+        f'{body}</table>'
+        f'<div style="margin-top:6px;font-size:0.85rem;color:#888;">채권, 채무 : {latest_date} 기준 SAP상 미결항목</div>'
+    )
+
+
+def _build_simulator_html():
+    """CNY 환전 시뮬레이션 정적 HTML (Streamlit 세션 값 또는 기본 50%/KRW 사용)."""
+    cny_d = per_cur.get("CNY", {})
+    cash = cny_d.get("cash", 0)
+    book = cny_d.get("cash_book", 0)
+    mkt_v = cny_d.get("mkt", 0)
+    if cash <= 0:
+        return ""
+    sim_target = st.session_state.get("cny_sim_target", "KRW")
+    sim_pct = st.session_state.get("cny_sim_pct", "50%")
+    pct_val = int(sim_pct.replace("%", "")) / 100
+    sim_amt = cash * pct_val
+    usd_mkt_v = per_cur.get("USD", {}).get("mkt", 0)
+
+    if sim_target == "KRW":
+        scen = [("최저 (밴드 하단)", float(cny_lo)),
+                ("평균 (중간값)", (float(cny_lo) + float(cny_hi)) / 2),
+                ("최고 (밴드 상단)", float(cny_hi))]
+        unit_label = "CNY/KRW"
+    else:
+        scen = [("최저 (밴드 하단)", float(cross_lo)),
+                ("평균 (중간값)", (float(cross_lo) + float(cross_hi)) / 2),
+                ("최고 (밴드 상단)", float(cross_hi))]
+        unit_label = "USD/CNY 재정환율"
+
+    rows = ""
+    for label, rate in scen:
+        if sim_target == "KRW":
+            converted = sim_amt * rate
+            pnl = (rate - book) * sim_amt if book else 0
+            conv_str = f"{converted:,.0f} 원"
+        else:
+            usd_amt = sim_amt / rate if rate else 0
+            converted = usd_amt
+            book_krw = sim_amt * book if book else 0
+            pnl = (usd_amt * usd_mkt_v) - book_krw if usd_mkt_v else 0
+            conv_str = f"${converted:,.2f}"
+        color = "#C00000" if pnl > 0 else ("#4A90D9" if pnl < 0 else "#666")
+        arrow = "▲" if pnl > 0 else ("▼" if pnl < 0 else "—")
+        rows += (
+            f'<tr><td style="padding:9px;font-weight:600;background:#f8f9fc;">{label}</td>'
+            f'<td style="text-align:right;">{rate:,.2f}</td>'
+            f'<td style="text-align:right;">{sim_amt:,.0f} CNY</td>'
+            f'<td style="text-align:right;font-weight:600;">{conv_str}</td>'
+            f'<td style="text-align:right;color:{color};font-weight:700;">{arrow} {abs(pnl):,.0f} 원</td>'
+            f'</tr>'
+        )
+    return (
+        f'<div style="margin-top:18px;padding:16px 20px;background:#fafbff;border:1px solid #d6d9e3;border-radius:10px;">'
+        f'<div style="font-weight:700;font-size:1.05rem;margin-bottom:8px;color:#2E75B6;">💱 CNY 환전 시뮬레이션</div>'
+        f'<div style="font-size:0.85rem;color:#666;margin-bottom:8px;">'
+        f'보유 CNY <b>{cash:,.0f}</b> · 장부단가 {book:,.2f}원 · 당일 매매기준율 {mkt_v:,.2f}원 '
+        f'<span style="color:#888;">| 환전 통화 <b>{sim_target}</b> · 환전 비중 <b>{sim_pct}</b></span></div>'
+        f'<table style="width:100%;border-collapse:collapse;border:1px solid #ddd;font-size:0.92rem;">'
+        f'<tr style="background:#f0f4ff;text-align:center;">'
+        f'<th style="padding:9px;border:1px solid #ddd;">시나리오</th>'
+        f'<th style="padding:9px;border:1px solid #ddd;">{unit_label}</th>'
+        f'<th style="padding:9px;border:1px solid #ddd;">환전 CNY</th>'
+        f'<th style="padding:9px;border:1px solid #ddd;">{"KRW 확보" if sim_target == "KRW" else "USD 확보"}</th>'
+        f'<th style="padding:9px;border:1px solid #ddd;">외환차손익</th>'
+        f'</tr>{rows}</table>'
+        f'<div style="margin-top:6px;font-size:0.78rem;color:#888;">'
+        f'※ 시나리오 환율은 금주 전망 밴드의 하단/중간/상단 기준 · 다른 비중·통화 시뮬은 대시보드에서 조정</div>'
+        f'</div>'
+    )
+
+
 # ── HTML 리포트 다운로드 ──
 def _gen_html():
-    chart_html = build_chart(df, events=_chart_events).to_html(include_plotlyjs="cdn", full_html=False)
+    # 절대값 + 변동률 인덱스 두 차트 모두 포함
+    chart_abs_html = build_chart(df, events=_chart_events, normalized=False).to_html(include_plotlyjs="cdn", full_html=False)
+    chart_norm_html = build_chart(df, events=_chart_events, normalized=True).to_html(include_plotlyjs=False, full_html=False)
 
-    # 섹션1 통화 필터 반영 (UI 선택 그대로)
+    # 섹션1 통화 필터 반영 (UI 선택 그대로) — HTML에선 JS로 실시간 토글 가능
     available = sorted(set(SECTION_CASH_CURS + SECTION_AR_CURS + SECTION_AP_CURS + SECTION_NET_CURS))
     selected = st.session_state.get("cur_filter") or available
-    cash_f = [c for c in SECTION_CASH_CURS if c in selected]
-    ar_f = [c for c in SECTION_AR_CURS if c in selected]
-    ap_f = [c for c in SECTION_AP_CURS if c in selected]
-    net_f = [c for c in SECTION_NET_CURS if c in selected]
-    unified_table_html = _build_unified_table_html(cash_f, ar_f, ap_f, net_f)
 
-    # 섹션1 합계 외환차손익
-    total_pnl_won = sum(per_cur[c]["net_pnl"] for c in net_f if c in per_cur)
+    # JS 필터용 통화 체크박스 + 통화별 PnL 데이터 임베딩
+    pnl_map = {c: per_cur[c]["net_pnl"] for c in available if c in per_cur}
+    import json as _json
+    pnl_json = _json.dumps(pnl_map, ensure_ascii=False)
+    cur_filter_html = (
+        f'<div style="margin:8px 0 12px 0;padding:10px 14px;background:#f5f8ff;border:1px solid #d6d9e3;border-radius:6px;font-size:0.9rem;">'
+        f'<b>📊 표시할 통화 선택:</b> &nbsp;'
+        + " ".join(
+            f'<label style="margin-right:14px;cursor:pointer;">'
+            f'<input type="checkbox" data-cur="{c}" {"checked" if c in selected else ""} onchange="filterCur()"> {c}'
+            f'</label>'
+            for c in available
+        )
+        + '</div>'
+    )
+    unified_table_html = _build_unified_table_html_filterable()
+
+    # 섹션1 합계 외환차손익 (초기값은 selected 기준, JS로 재계산)
+    total_pnl_won = sum(per_cur[c]["net_pnl"] for c in selected if c in per_cur)
     if total_pnl_won > 0:
         tcolor, tarrow, tstatus = "#C00000", "▲", "이익"
     elif total_pnl_won < 0:
@@ -2511,10 +2661,13 @@ def _gen_html():
         f'<div style="margin:14px 0;padding:14px 20px;background:#f5f9ff;border:1px solid #c5d3e8;border-radius:8px;font-size:0.95rem;">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
         f'<span style="color:#444;">💰 <b>현재기준 최종 외환차손익</b> '
-        f'<span style="font-size:0.82rem;color:#888;">(선택: {tscope})</span></span>'
-        f'<span style="color:{tcolor};font-weight:700;font-size:1.3rem;">{tarrow} {abs(total_pnl_won):,.0f} 원 ({tstatus})</span>'
+        f'<span id="total-pnl-scope" style="font-size:0.82rem;color:#888;">(선택: {tscope})</span></span>'
+        f'<span id="total-pnl-value" style="color:{tcolor};font-weight:700;font-size:1.3rem;">{tarrow} {abs(total_pnl_won):,.0f} 원 ({tstatus})</span>'
         f'</div></div>'
     )
+
+    # 시뮬레이터 정적 HTML
+    simulator_html = _build_simulator_html()
 
     # AI 통합 의사결정 표 HTML
     if g_portfolio_decision.get("error"):
@@ -2545,6 +2698,25 @@ def _gen_html():
         f'{section3_review_html}'
     ) if section3_review_html else ""
 
+    # 전주 KPI 카드용 delta 계산
+    usd_diff_v = stats["avg_lw"]["USD_KRW"] - stats["avg_prev"]["USD_KRW"]
+    cny_diff_v = stats["avg_lw"]["CNY_KRW"] - stats["avg_prev"]["CNY_KRW"]
+    cross_diff_v = stats["avg_lw"]["USD_CNY"] - stats["avg_prev"]["USD_CNY"]
+    def _delta_html(pct, diff, fmt):
+        color = "#C00000" if pct > 0 else ("#4A90D9" if pct < 0 else "#666")
+        arrow = "↑" if pct > 0 else ("↓" if pct < 0 else "→")
+        if fmt == "krw":
+            diff_s = f"{diff:+,.2f}원"
+        else:
+            diff_s = f"{diff:+.4f}"
+        return (
+            f'<div style="font-size:0.8rem;color:{color};font-weight:600;margin-top:2px;">'
+            f'{arrow} {pct:+.2f}% ({diff_s}) <span style="color:#888;font-weight:400;">전전주 대비</span></div>'
+        )
+    usd_delta = _delta_html(stats["usd_vs_pw"], usd_diff_v, "krw")
+    cny_delta = _delta_html(stats["cny_vs_pw"], cny_diff_v, "krw")
+    cross_delta = _delta_html(stats["cross_vs_pw"], cross_diff_v, "cross")
+
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8">
 <title>주간 환율 리포트 — 2026년 4월 2주차</title>
@@ -2559,14 +2731,52 @@ td{{padding:9px 10px;border:1px solid #eee;}}
 .mc>div{{flex:1;background:linear-gradient(135deg,#667eea08,#764ba208);border:1px solid #ddd;border-radius:12px;padding:16px 20px;}}
 .mc .lb{{font-size:0.82rem;color:#555;}} .mc .vl{{font-size:1.8rem;font-weight:700;margin:4px 0;}}
 .ft{{font-size:0.75rem;color:#aaa;margin-top:20px;border-top:1px solid #eee;padding-top:8px;}}
-</style></head><body>
+.chart-tabs{{display:flex;gap:8px;margin:8px 0;}}
+.chart-tab{{padding:6px 14px;background:#f0f4ff;border:1px solid #c5d3e8;border-radius:6px;cursor:pointer;font-size:0.9rem;font-weight:600;color:#374151;}}
+.chart-tab.active{{background:#2E75B6;color:white;border-color:#2E75B6;}}
+</style>
+<script>
+const PER_CUR_PNL = {pnl_json};
+const ALL_CURS_LEN = {len(available)};
+function filterCur() {{
+  const checks = document.querySelectorAll('.cur-filter input[data-cur]');
+  const selected = [...checks].filter(i => i.checked).map(i => i.dataset.cur);
+  // 표 행 토글
+  document.querySelectorAll('table tr[data-cur]').forEach(tr => {{
+    tr.style.display = selected.includes(tr.dataset.cur) ? '' : 'none';
+  }});
+  // 합계 외환차손익 재계산
+  const total = selected.reduce((s, c) => s + (PER_CUR_PNL[c] || 0), 0);
+  const arrow = total > 0 ? '▲' : (total < 0 ? '▼' : '—');
+  const color = total > 0 ? '#C00000' : (total < 0 ? '#4A90D9' : '#666');
+  const status = total > 0 ? '이익' : (total < 0 ? '손실' : '보합');
+  const v = document.getElementById('total-pnl-value');
+  if (v) {{
+    v.style.color = color;
+    v.innerHTML = arrow + ' ' + Math.abs(Math.round(total)).toLocaleString('ko-KR') + ' 원 (' + status + ')';
+  }}
+  const s = document.getElementById('total-pnl-scope');
+  if (s) {{
+    s.textContent = '(선택: ' + (selected.length === ALL_CURS_LEN ? '전체' : selected.join(' · ')) + ')';
+  }}
+}}
+function showChart(tabId) {{
+  document.querySelectorAll('.chart-pane').forEach(p => p.style.display = 'none');
+  document.getElementById(tabId).style.display = 'block';
+  document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.chart-tab[data-tab="' + tabId + '"]').classList.add('active');
+}}
+</script>
+</head><body>
 <h2>📊 주간 환율 리포트 — 2026년 4월 2주차</h2>
 <div class="cap">한국은행 ECOS API · 국민은행/신한은행 PDF · 서울파이낸셜 · Claude AI 의사결정 분석</div>
 
 <div class="sh">1. 주간 외환 관리 가이드라인 ({latest_date} 기준)</div>
+<div class="cur-filter">{cur_filter_html}</div>
 {unified_table_html}
 {total_pnl_html}
 {ai_html}
+{simulator_html}
 
 <div class="sh">2. 금주 환율 전망 ({REPORT_WEEK_START[4:6]}/{REPORT_WEEK_START[6:]} ~ {REPORT_WEEK_END[4:6]}/{REPORT_WEEK_END[6:]})</div>
 <div class="mc">
@@ -2586,7 +2796,12 @@ td{{padding:9px 10px;border:1px solid #eee;}}
 
 <div class="sh">3. 환율 추이 및 전주 동향</div>
 <div style="font-weight:700;font-size:1.0rem;margin:6px 0;color:#2E75B6;">📈 직전 3개월 환율 추이 ({START_DATE[4:6]}/{START_DATE[6:]} ~ {END_DATE[4:6]}/{END_DATE[6:]})</div>
-{chart_html}
+<div class="chart-tabs">
+  <div class="chart-tab active" data-tab="chart-norm" onclick="showChart('chart-norm')">📊 변동률 인덱스 (시작일=100)</div>
+  <div class="chart-tab" data-tab="chart-abs" onclick="showChart('chart-abs')">💹 절대값</div>
+</div>
+<div id="chart-norm" class="chart-pane">{chart_norm_html}</div>
+<div id="chart-abs" class="chart-pane" style="display:none;">{chart_abs_html}</div>
 
 <table style="margin-top:12px;">
 <tr><th></th><th>USD/KRW</th><th>CNY/KRW</th><th>USD/CNY</th></tr>
@@ -2598,9 +2813,9 @@ td{{padding:9px 10px;border:1px solid #eee;}}
 
 <div style="font-weight:700;font-size:1.0rem;margin:18px 0 8px 0;color:#2E75B6;">📋 전주 환율 현황 ({LAST_WEEK_START[4:6]}/{LAST_WEEK_START[6:]} ~ {LAST_WEEK_END[4:6]}/{LAST_WEEK_END[6:]})</div>
 <div class="mc">
-<div><div class="lb">USD/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_KRW']:,.2f} 원</div></div>
-<div><div class="lb">CNY/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['CNY_KRW']:,.2f} 원</div></div>
-<div><div class="lb">USD/CNY (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_CNY']:.4f}</div></div>
+<div><div class="lb">USD/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_KRW']:,.2f} 원</div>{usd_delta}</div>
+<div><div class="lb">CNY/KRW (전주 평균)</div><div class="vl">{stats['avg_lw']['CNY_KRW']:,.2f} 원</div>{cny_delta}</div>
+<div><div class="lb">USD/CNY (전주 평균)</div><div class="vl">{stats['avg_lw']['USD_CNY']:.4f}</div>{cross_delta}</div>
 </div>
 
 {section3_review_block}
